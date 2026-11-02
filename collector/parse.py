@@ -22,18 +22,21 @@ class KamisError(Exception):
     """KAMIS가 성공도 "데이터 없음"도 아닌 응답을 돌려줬거나, 받기에 실패했다."""
 
 
-def parse_price(text: Optional[str]) -> Optional[int]:
+def parse_price(text: Any) -> Optional[int]:
     """KAMIS 가격 글자를 원 단위 정수로 바꾼다.
 
-    쉼표를 지운 뒤 정수로 읽는다. "-", 빈 글자, None, 0은 값이 없는 것으로 본다.
+    쉼표를 지운 뒤 정수로 읽는다. 숫자로 온 값은 그대로 쓴다. "-", 빈 글자,
+    None, 0, 글자도 숫자도 아닌 값은 값이 없는 것으로 본다.
 
     Args:
-        text: KAMIS 응답의 가격 글자(예: "2,400").
+        text: KAMIS 응답의 가격 칸(보통 "2,400" 같은 글자).
 
     Returns:
         가격. 값이 없으면 None.
     """
-    if text is None:
+    if isinstance(text, (int, float)) and not isinstance(text, bool):
+        return int(text) if text > 0 else None
+    if not isinstance(text, str):
         return None
     cleaned = text.replace(",", "").strip()
     if not cleaned.isdigit():
@@ -100,6 +103,8 @@ def _items_or_empty(raw: Dict[str, Any]) -> List[Dict[str, Any]]:
     elif isinstance(data, dict):
         code = str(data.get("error_code", SUCCESS))
         items = data.get("item") or []
+        if isinstance(items, dict):
+            items = [items]
     else:
         raise KamisError("KAMIS 응답 모양을 알 수 없음")
     if code == NO_DATA:
@@ -113,7 +118,8 @@ def parse_category(raw: Dict[str, Any], category_code: str, today: date) -> List
     """전체 평균 API 응답을 품종별 줄로 바꾼다.
 
     응답에서 항목 목록을 꺼내고, 항목마다 당일 날짜(day1)와 당일·1주 전·
-    1개월 전·1년 전·평년 값(dpr1, dpr3, dpr5, dpr6, dpr7)을 읽는다.
+    1개월 전·1년 전·평년 값(dpr1, dpr3, dpr5, dpr6, dpr7)을 읽는다. 코드 칸은
+    "itemcode"와 "item_code" 두 모양을 다 받는다. 읽을 수 없는 줄은 건너뛴다.
 
     Args:
         raw: 전체 평균 API의 JSON 응답.
@@ -128,29 +134,33 @@ def parse_category(raw: Dict[str, Any], category_code: str, today: date) -> List
     """
     rows = []
     for it in _items_or_empty(raw):
-        rows.append(OverallRow(
-            category_code=category_code,
-            item_code=str(it.get("itemcode", "")),
-            item_name=str(it.get("item_name", "")),
-            kind_code=str(it.get("kindcode", "")),
-            kind_name=str(it.get("kind_name", "")),
-            rank=str(it.get("rank", "")),
-            unit=str(it.get("unit", "")),
-            as_of=parse_day(str(it.get("day1", "")), today),
-            today=parse_price(it.get("dpr1")),
-            week_ago=parse_price(it.get("dpr3")),
-            month_ago=parse_price(it.get("dpr5")),
-            year_ago=parse_price(it.get("dpr6")),
-            normal=parse_price(it.get("dpr7")),
-        ))
+        try:
+            rows.append(OverallRow(
+                category_code=category_code,
+                item_code=str(it.get("itemcode") or it.get("item_code") or ""),
+                item_name=str(it.get("item_name", "")),
+                kind_code=str(it.get("kindcode") or it.get("kind_code") or ""),
+                kind_name=str(it.get("kind_name", "")),
+                rank=str(it.get("rank", "")),
+                unit=str(it.get("unit", "")),
+                as_of=parse_day(str(it.get("day1", "")), today),
+                today=parse_price(it.get("dpr1")),
+                week_ago=parse_price(it.get("dpr3")),
+                month_ago=parse_price(it.get("dpr5")),
+                year_ago=parse_price(it.get("dpr6")),
+                normal=parse_price(it.get("dpr7")),
+            ))
+        except (ValueError, TypeError, AttributeError):
+            continue
     return rows
 
 
 def parse_period(raw: Dict[str, Any]) -> List[StoreRow]:
     """가게별 값 API 응답을 가게별 줄로 바꾼다.
 
-    가게 이름이 비었거나, 지역이 "평균"·"평년"인 요약 줄이거나, 가격이 없는
-    줄은 뺀다. 남은 줄마다 대형유통 여부를 붙인다.
+    가게 이름이 비었거나, 지역이 "평균"·"평년"인 요약 줄이거나, 가격이 없거나,
+    날짜(yyyy, regday)를 읽을 수 없는 줄은 뺀다. 남은 줄마다 대형유통 여부를
+    붙인다.
 
     Args:
         raw: 가게별 값 API의 JSON 응답.
@@ -163,13 +173,18 @@ def parse_period(raw: Dict[str, Any]) -> List[StoreRow]:
     """
     rows = []
     for it in _items_or_empty(raw):
-        market = str(it.get("marketname") or "").strip()
-        county = str(it.get("countyname") or "").strip()
-        price = parse_price(it.get("price"))
-        if not market or county in ("평균", "평년") or price is None:
+        try:
+            market = str(it.get("marketname") or "").strip()
+            county = str(it.get("countyname") or "").strip()
+            price = parse_price(it.get("price"))
+            if not market or county in ("평균", "평년") or price is None:
+                continue
+            month_day = re.search(r"(\d{1,2})[/-](\d{1,2})", str(it.get("regday", "")))
+            if not month_day:
+                continue
+            day = date(int(it.get("yyyy")), int(month_day.group(1)), int(month_day.group(2)))
+        except (ValueError, TypeError, AttributeError):
             continue
-        year = int(it.get("yyyy"))
-        day = parse_day(f"{year}-{str(it.get('regday')).replace('/', '-')}", date(year, 12, 31))
         rows.append(StoreRow(day=day, county=county, market=market, price=price,
                              large=is_large_retail(market)))
     return rows

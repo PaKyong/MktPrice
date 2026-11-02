@@ -114,6 +114,75 @@ def test_run_sample_does_not_overwrite_real_data(tmp_path: Path) -> None:
     assert out.read_bytes() == before
 
 
+def test_first_real_run_does_not_keep_sample_values(tmp_path: Path) -> None:
+    out = tmp_path / "prices.json"
+    run(sample_source(tmp_path, date(2026, 11, 2)), ITEMS, out, date(2026, 11, 2))
+    real = FailingSource(sample_source(tmp_path, date(2026, 11, 3)), fail_items={ITEMS[1].id})
+    real.name = "KAMIS"
+    assert run(real, ITEMS, out, date(2026, 11, 3)) == "updated"
+    data = read(out)
+    assert data["source"] == "KAMIS"
+    assert ITEMS[1].id not in {e["id"] for e in data["items"]}
+
+
+class RenamedSource(FailingSource):
+    """가게 이름이나 전체 평균 줄을 바꿔, 해석 가정이 틀린 실제 응답을 흉내 낸다."""
+
+    def __init__(self, inner: SampleSource, market_prefix: str = "", kind_suffix: str = "",
+                 unit: str = "") -> None:
+        super().__init__(inner)
+        self.market_prefix = market_prefix
+        self.kind_suffix = kind_suffix
+        self.unit = unit
+
+    def category(self, category_code: str) -> Dict[str, Any]:
+        raw = json.loads(json.dumps(self.inner.category(category_code)))
+        if isinstance(raw.get("data"), dict):
+            for row in raw["data"]["item"]:
+                row["kindcode"] += self.kind_suffix
+                if self.unit:
+                    row["unit"] = self.unit
+        return raw
+
+    def period(self, item: Item, start: date, end: date) -> Dict[str, Any]:
+        raw = json.loads(json.dumps(self.inner.period(item, start, end)))
+        for row in raw["data"]["item"]:
+            row["marketname"] = self.market_prefix + row["marketname"]
+        return raw
+
+
+def test_run_fails_when_no_large_retail_store_matches(tmp_path: Path) -> None:
+    out = tmp_path / "prices.json"
+    src = RenamedSource(sample_source(tmp_path, date(2026, 11, 2)), market_prefix="가게 ")
+    with pytest.raises(CollectError, match="대형유통"):
+        run(src, ITEMS, out, date(2026, 11, 3))
+    assert not out.exists()
+
+
+def test_run_fails_when_no_item_matches_overall(tmp_path: Path) -> None:
+    out = tmp_path / "prices.json"
+    src = RenamedSource(sample_source(tmp_path, date(2026, 11, 2)), kind_suffix="x")
+    with pytest.raises(CollectError, match="전체 평균"):
+        run(src, ITEMS, out, date(2026, 11, 3))
+    assert not out.exists()
+
+
+def test_run_treats_unit_mismatch_as_failure_and_reports_it(tmp_path: Path,
+                                                            capsys: pytest.CaptureFixture[str]) -> None:
+    out = tmp_path / "prices.json"
+    run(sample_source(tmp_path, date(2026, 11, 2)), ITEMS, out, date(2026, 11, 2))
+    src = RenamedSource(sample_source(tmp_path, date(2026, 11, 3)), unit="3kg")
+    with pytest.raises(CollectError):
+        run(src, ITEMS, out, date(2026, 11, 3))
+    assert "단위가 다른 품종" in capsys.readouterr().out
+
+
+def test_run_prints_summary(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    run(sample_source(tmp_path, date(2026, 11, 2)), ITEMS, tmp_path / "prices.json", date(2026, 11, 3))
+    printed = capsys.readouterr().out
+    assert f"새 항목 {len(ITEMS)}개" in printed and f"전체 평균과 맞은 품종 {len(ITEMS)}개" in printed
+
+
 def test_run_without_sample_files_says_how_to_make_them(tmp_path: Path) -> None:
     with pytest.raises(CollectError, match="make_sample"):
         run(SampleSource(tmp_path / "없음"), ITEMS, tmp_path / "prices.json", date(2026, 11, 3))

@@ -22,6 +22,38 @@ def test_parse_price() -> None:
     assert parse_price("0") is None
 
 
+def test_parse_price_odd_values() -> None:
+    assert parse_price([]) is None  # type: ignore[arg-type]
+    assert parse_price(2400) == 2400  # type: ignore[arg-type]
+
+
+def test_parse_category_accepts_underscored_code_names() -> None:
+    raw = {"data": {"error_code": "000", "item": [{
+        "item_name": "사과", "item_code": "411", "kind_name": "홍로", "kind_code": "05",
+        "rank": "상품", "unit": "10개", "day1": "당일 (11/02)", "dpr1": "32,000"}]}}
+    [row] = parse_category(raw, "400", date(2026, 11, 2))
+    assert (row.item_code, row.kind_code) == ("411", "05")
+
+
+def test_parse_category_skips_broken_row_and_accepts_single_item_dict() -> None:
+    good = {"item_name": "사과", "itemcode": "411", "kind_name": "홍로", "kindcode": "05",
+            "rank": "상품", "unit": "10개", "day1": "당일 (11/02)", "dpr1": "32,000"}
+    broken = {**good, "kindcode": "06", "day1": "당일"}
+    rows = parse_category({"data": {"error_code": "000", "item": [broken, good]}}, "400", date(2026, 11, 2))
+    assert [r.kind_code for r in rows] == ["05"]
+    rows = parse_category({"data": {"error_code": "000", "item": good}}, "400", date(2026, 11, 2))
+    assert [r.kind_code for r in rows] == ["05"]
+
+
+def test_parse_period_reads_short_day_and_skips_broken_rows() -> None:
+    raw = {"data": {"error_code": "000", "item": [
+        {"countyname": "서울", "marketname": "B-유통", "yyyy": "2026", "regday": "11/2", "price": "3,250"},
+        {"countyname": "서울", "marketname": "C-유통", "regday": "11/02", "price": "3,000"},
+        {"countyname": "서울", "marketname": "D-유통", "yyyy": "2026", "regday": "11/02", "price": []}]}}
+    rows = parse_period(raw)
+    assert [(r.market, r.day) for r in rows] == [("B-유통", date(2026, 11, 2))]
+
+
 def test_parse_day_forms() -> None:
     today = date(2026, 11, 2)
     assert parse_day("2026-11-02", today) == date(2026, 11, 2)
