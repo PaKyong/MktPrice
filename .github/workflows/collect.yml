@@ -1,0 +1,88 @@
+# 평일 저녁 KAMIS 가격을 받아 data/prices.json을 커밋하고, GitHub Pages에 배포한다.
+# Actions가 기본 토큰으로 푸시한 커밋은 다른 워크플로를 깨우지 않으므로, 수집과 배포를 한 워크플로에 둔다.
+name: collect
+
+on:
+  schedule:
+    # 평일 한국 시각 19시(UTC 10시). 키를 받은 뒤 KAMIS가 그날 값을 올리는 시각을 보고 다시 정한다.
+    - cron: "0 10 * * 1-5"
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    # 사람이 코드를 푸시했을 때는 수집하지 않고 배포만 한다.
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      KAMIS_CERT_KEY: ${{ secrets.KAMIS_CERT_KEY }}
+      KAMIS_CERT_ID: ${{ secrets.KAMIS_CERT_ID }}
+    steps:
+      - name: 키 확인
+        id: key
+        run: |
+          if [ -z "$KAMIS_CERT_KEY" ] || [ -z "$KAMIS_CERT_ID" ]; then
+            echo "키 없음: 수집을 건너뜁니다"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.ready == 'true'
+
+      - uses: astral-sh/setup-uv@v6
+        if: steps.key.outputs.ready == 'true'
+
+      - name: 수집
+        if: steps.key.outputs.ready == 'true'
+        run: uv run python -m collector
+
+      - name: 바뀌었으면 커밋·푸시
+        if: steps.key.outputs.ready == 'true'
+        run: |
+          if git diff --quiet -- data/prices.json; then
+            echo "가격 파일이 그대로라 커밋하지 않습니다"
+            exit 0
+          fi
+          as_of=$(python3 -c "import json; print(json.load(open('data/prices.json', encoding='utf-8'))['as_of'])")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/prices.json
+          git commit -m "chore(data): ${as_of} 가격 갱신"
+          git push
+
+  deploy:
+    needs: collect
+    # 수집이 성공했거나 건너뛰었을 때(키 없음, 코드 푸시) 배포한다. 수집이 실패하면 지금 사이트를 그대로 둔다.
+    if: always() && needs.collect.result != 'failure' && needs.collect.result != 'cancelled'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: 화면 파일만 모으기
+        run: |
+          mkdir _site
+          cp -r index.html style.css app.js store.js sw.js manifest.webmanifest icons data _site/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

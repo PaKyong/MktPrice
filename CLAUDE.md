@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # 장보기 식재료 가격 페이지
 
 ## 지금 상태
-- 기획 중이다. 지금 상태와 정한 것은 `docs/decisions.md`에 있다. 이 파일에는 정한 것만 옮긴다.
+- 1차 구현(`docs/plan.md` Task 1~9)을 마쳤다. 지금 상태와 정한 것은 `docs/decisions.md`에 있다. 이 파일에는 정한 것만 옮긴다.
 - 정한 설계를 한곳에 모은 문서는 `docs/design.md`다(2026-11-02 사용자 확정).
 - 구현 계획은 `docs/plan.md`다(Task 1~9, 체크 상자로 진행을 표시한다).
 
@@ -16,6 +16,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 품종 목록 다시 만들기: `uv run python -m collector.make_items` — 키를 받은 뒤 실제 품종과 조사 단위로 `collector/items.json`을 바꿀 때 쓴다.
 - 화면 확인: `uv run python -m http.server 8000`(앱 안 브라우저는 `.claude/launch.json`의 "web") 뒤 `http://localhost:8000`을 휴대폰 크기(375×812)로 연다. 화면은 자동 시험이 없으므로(설계 11절) 검색 → 담기 → 개수 → 총액 → 상세 → 빼기를 직접 해 본다.
 - 화면 파일(HTML·CSS·JS·아이콘)을 고치면 `sw.js` 맨 위 `CACHE`의 숫자를 올린다(예: `mp-v1` → `mp-v2`). 안 올리면 폰에 저장된 옛 화면이 계속 열린다. 아이콘은 `uv run python tools/make_icons.py`로 다시 만든다.
+
+## 예약 실행과 배포 (`.github/workflows/collect.yml`)
+- 평일 한국 19시(UTC 10시)와 Actions 탭의 "Run workflow"(지금 실행)로 돈다. Secrets에 `KAMIS_CERT_KEY`, `KAMIS_CERT_ID`가 없으면 "키 없음"을 남기고 수집을 건너뛴 뒤 배포만 한다. 키가 있으면 수집하고 `data/prices.json`이 바뀌었을 때만 `github-actions[bot]`이 `chore(data): <기준일> 가격 갱신`으로 커밋·푸시한다.
+- 배포도 같은 워크플로가 한다(Actions 기본 토큰으로 푸시한 커밋은 다른 워크플로를 깨우지 않아서). 사람이 `main`에 푸시하면 수집 없이 배포만 돈다. 배포에는 화면 파일과 `data/`만 들어간다. 저장소 설정에서 Pages 출처가 "GitHub Actions"여야 한다.
+- Actions가 평일마다 `data/prices.json`을 커밋하므로, 푸시 전에 먼저 받아온다(`git pull --rebase`). `data/prices.json`은 손으로 고치지 않는다.
 
 ## 프로젝트 목적 (2026-11-02 정함)
 - 대형마트 안에서 가격표의 값이 적당한지 판단한다. 품목별 KAMIS 오늘 평균 단위 가격과 "요즘 평년보다 18% 비싼 시기" 같은 한 줄을 보여 주고, 비교는 사람이 눈으로 한다.
