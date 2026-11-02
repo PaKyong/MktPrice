@@ -9,6 +9,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 정한 설계를 한곳에 모은 문서는 `docs/design.md`다(2026-11-02 사용자 확정).
 - 구현 계획은 `docs/plan.md`다(Task 1~9, 체크 상자로 진행을 표시한다).
 
+## 실행 명령
+- 샘플 응답 만들기: `uv run python -m collector.make_sample` — `collector/sample/`(14MB, git에 넣지 않음)에 만든다. 키 없이 수집하기 전에 한 번 돌린다.
+- 수집: `uv run python -m collector` — 키(환경변수 `KAMIS_CERT_KEY`, `KAMIS_CERT_ID`)가 있으면 KAMIS, 없으면 샘플로 `data/prices.json`을 만든다. 기준일과 출처가 기존 파일과 같으면 건너뛴다. 실제 데이터가 든 파일은 샘플로 덮어쓰지 않는다.
+- 시험: `uv run pytest` (인터넷 없이 돈다). 하나만: `uv run pytest collector/tests/test_compute.py::test_signal_boundaries`
+- 품종 목록 다시 만들기: `uv run python -m collector.make_items` — 키를 받은 뒤 실제 품종과 조사 단위로 `collector/items.json`을 바꿀 때 쓴다.
+
 ## 프로젝트 목적 (2026-11-02 정함)
 - 대형마트 안에서 가격표의 값이 적당한지 판단한다. 품목별 KAMIS 오늘 평균 단위 가격과 "요즘 평년보다 18% 비싼 시기" 같은 한 줄을 보여 주고, 비교는 사람이 눈으로 한다.
 - 1차에는 장보기 목록(체크)과 예상 총액(범위)도 넣는다. 나와 가족이 각자 자기 폰으로 쓰고, 목록은 폰마다 따로 둔다.
