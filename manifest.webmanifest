@@ -1,0 +1,17 @@
+{
+  "name": "장보기 가격",
+  "short_name": "장보기 가격",
+  "description": "대형마트 가격표가 적당한지 KAMIS 소매가격으로 바로 비교해요.",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F6F7F2",
+  "theme_color": "#1E2A22",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

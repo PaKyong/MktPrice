@@ -263,7 +263,33 @@ async function refresh() {
   render();
 }
 
+// 처음 열었을 때 한 번 홈 화면 추가를 안내한다. 닫으면 다시 나오지 않고, 이미 앱 모양이면 보이지 않는다.
+function setupInstallHint() {
+  const KEY = "mp.installHint.closed";
+  const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  let closed = false;
+  try {
+    closed = localStorage.getItem(KEY) === "1";
+  } catch {
+    // 저장 공간을 못 쓰면 안내를 그대로 보인다.
+  }
+  const hint = $("banner-install");
+  hint.hidden = standalone || closed;
+  $("install-close").addEventListener("click", () => {
+    hint.hidden = true;
+    try {
+      localStorage.setItem(KEY, "1");
+    } catch {
+      // 저장하지 못하면 다음에 다시 보인다.
+    }
+  });
+}
+
 async function init() {
+  setupInstallHint();
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
   $("search").addEventListener("input", (ev) => {
     state.query = ev.target.value.trim();
     if (location.hash.startsWith("#/item/")) location.hash = "#/";
