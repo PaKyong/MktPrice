@@ -263,6 +263,32 @@ async function refresh() {
   render();
 }
 
+// 가격 파일을 받는다. 못 받으면 null.
+async function fetchPrices() {
+  try {
+    const res = await fetch("data/prices.json", { cache: "no-cache" });
+    return res.ok ? await res.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+function setData(data) {
+  state.data = data;
+  state.byId = new Map(data.items.map((e) => [e.id, e]));
+}
+
+// 화면이 다시 보일 때 가격 파일을 새로 받는다. 홈 화면 앱은 며칠 뒤 다시 띄워도
+// 처음부터 열리지 않아서, 이렇게 안 하면 옛 가격이 남는다.
+// 파일을 만든 시각이 같거나 못 받으면(오프라인) 지금 화면을 그대로 둔다.
+async function reloadPrices() {
+  if (document.visibilityState !== "visible") return;
+  const data = await fetchPrices();
+  if (!data || data.generated_at === state.data?.generated_at) return;
+  setData(data);
+  await refresh();
+}
+
 // 처음 열었을 때 한 번 홈 화면 추가를 안내한다. 닫으면 다시 나오지 않고, 이미 앱 모양이면 보이지 않는다.
 function setupInstallHint() {
   const KEY = "mp.installHint.closed";
@@ -309,17 +335,15 @@ async function init() {
   });
   window.addEventListener("online", render);
   window.addEventListener("offline", render);
+  document.addEventListener("visibilitychange", reloadPrices);
 
-  try {
-    const res = await fetch("data/prices.json", { cache: "no-cache" });
-    if (!res.ok) throw new Error(String(res.status));
-    state.data = await res.json();
-  } catch {
+  const data = await fetchPrices();
+  if (!data) {
     $("view").replaceChildren(h("p", { class: "empty" },
       "가격 파일을 불러오지 못했어요. 인터넷에 연결한 뒤 다시 열어 주세요."));
     return;
   }
-  state.byId = new Map(state.data.items.map((e) => [e.id, e]));
+  setData(data);
   await refresh();
 }
 

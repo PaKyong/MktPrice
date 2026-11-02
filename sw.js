@@ -2,7 +2,7 @@
 // 화면 파일은 저장해 둔 것을 먼저 쓰고, 가격 파일은 인터넷이 되면 새로 받는다.
 // 화면 파일을 고치면 CACHE 숫자를 올린다. 안 올리면 폰에 옛 화면이 계속 남는다.
 
-const CACHE = "mp-v2";
+const CACHE = "mp-v3";
 const PRICES = "data/prices.json";
 // 신호가 약한 매장에서 가격 파일을 이만큼만 기다리고, 넘으면 저장본을 먼저 보여 준다.
 const PRICES_WAIT_MS = 3000;
