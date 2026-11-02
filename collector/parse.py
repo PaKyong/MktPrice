@@ -2,9 +2,9 @@
 
 응답 모양은 KAMIS 문서를 보고 세운 가정이다. 성공은
 `{"data": {"error_code": "000", "item": [...]}}`, 데이터 없음은
-`{"data": ["001"]}` 또는 `error_code` "001"로 본다. 대형유통은 가게 이름이
-"유통"으로 끝나는 것으로 본다(KAMIS 누리집의 "B-유통" 표기). 셋 다 키를 받은
-뒤 실제 응답으로 확인한다.
+`{"data": ["001"]}` 또는 `error_code` "001"로 본다. 대형유통은 KAMIS 코드표의
+가게 이름 모양("A-유통", "R-마트")으로 가린다. 셋 다 키를 받은 뒤 실제
+응답으로 확인한다.
 """
 
 import re
@@ -15,6 +15,7 @@ from collector.models import OverallRow, StoreRow
 
 NO_DATA = "001"
 SUCCESS = "000"
+LARGE_RETAIL_NAME = re.compile(r"[A-Z][`']?-(?:유통|마트)")
 
 
 class KamisError(Exception):
@@ -72,13 +73,18 @@ def parse_day(text: str, today: date) -> date:
 def is_large_retail(market: str) -> bool:
     """가게 이름이 대형유통 가게인지 가린다.
 
+    KAMIS 코드표 "지역 및 시장 코드"에서 대형유통업체 가게는 "A-유통",
+    "B`-유통", "M'-유통", "R-마트"처럼 영문자 하나(뒤에 ` 또는 ')와 "-유통" 또는
+    "-마트"로 이름이 붙는다. 전통시장은 "경동"처럼 시장 이름, 온라인몰은
+    "온라인몰A"처럼 붙는다.
+
     Args:
         market: KAMIS 응답의 가게 이름.
 
     Returns:
-        이름이 "유통"으로 끝나면 True.
+        대형유통 가게 이름 모양이면 True.
     """
-    return market.strip().endswith("유통")
+    return LARGE_RETAIL_NAME.fullmatch(market.strip()) is not None
 
 
 def _items_or_empty(raw: Dict[str, Any]) -> List[Dict[str, Any]]:

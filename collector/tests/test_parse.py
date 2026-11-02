@@ -30,9 +30,14 @@ def test_parse_day_forms() -> None:
     assert parse_day("12/30", date(2027, 1, 2)) == date(2026, 12, 30)
 
 
-def test_is_large_retail() -> None:
-    assert is_large_retail("B-유통") is True
-    assert is_large_retail("경동") is False
+@pytest.mark.parametrize("market, expected", [
+    # KAMIS 코드표 "지역 및 시장 코드"의 대형유통업체 이름들
+    ("B-유통", True), ("R-마트", True), ("B`-유통", True), ("M'-유통", True),
+    # 도매/전통시장과 온라인몰
+    ("경동", False), ("가락소매", False), ("온라인몰A", False), ("대형유통", False),
+])
+def test_is_large_retail(market: str, expected: bool) -> None:
+    assert is_large_retail(market) is expected
 
 
 def test_parse_category_success() -> None:
