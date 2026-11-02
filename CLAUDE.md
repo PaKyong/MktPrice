@@ -14,6 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 수집: `uv run python -m collector` — 키(환경변수 `KAMIS_CERT_KEY`, `KAMIS_CERT_ID`)가 있으면 KAMIS, 없으면 샘플로 `data/prices.json`을 만든다. 기준일과 출처가 기존 파일과 같으면 건너뛴다. 실제 데이터가 든 파일은 샘플로 덮어쓰지 않는다.
 - 시험: `uv run pytest` (인터넷 없이 돈다). 하나만: `uv run pytest collector/tests/test_compute.py::test_signal_boundaries`
 - 품종 목록 다시 만들기: `uv run python -m collector.make_items` — 키를 받은 뒤 실제 품종과 조사 단위로 `collector/items.json`을 바꿀 때 쓴다.
+- 화면 확인: `uv run python -m http.server 8000`(앱 안 브라우저는 `.claude/launch.json`의 "web") 뒤 `http://localhost:8000`을 휴대폰 크기(375×812)로 연다. 화면은 자동 시험이 없으므로(설계 11절) 검색 → 담기 → 개수 → 총액 → 상세 → 빼기를 직접 해 본다.
 
 ## 프로젝트 목적 (2026-11-02 정함)
 - 대형마트 안에서 가격표의 값이 적당한지 판단한다. 품목별 KAMIS 오늘 평균 단위 가격과 "요즘 평년보다 18% 비싼 시기" 같은 한 줄을 보여 주고, 비교는 사람이 눈으로 한다.

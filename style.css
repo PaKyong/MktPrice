@@ -1,0 +1,211 @@
+/* 장보기 가격 — 마트 통로에서 한 손으로, 가격표 옆에 들고 보는 화면 */
+
+:root {
+  --paper: #f6f7f2;
+  --surface: #ffffff;
+  --ink: #1e2a22;
+  --muted: #5f6a62;
+  --line: #dde2d9;
+  --tag: #ffe45c;
+  --tag-ink: #2a2300;
+  --high: #c62828;
+  --high-bg: #fde4e1;
+  --low: #1e7b4f;
+  --low-bg: #dcf3e6;
+  --mid: #56615a;
+  --mid-bg: #e9ece6;
+  --focus: #2563eb;
+  --dock-h: 132px;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #121815;
+    --surface: #1a221d;
+    --ink: #e8eee9;
+    --muted: #9aa69e;
+    --line: #2c3730;
+    --tag: #f2d43a;
+    --tag-ink: #221c00;
+    --high: #ff8a80;
+    --high-bg: #3a1b19;
+    --low: #6fd3a0;
+    --low-bg: #16301f;
+    --mid: #b3bdb6;
+    --mid-bg: #26302a;
+    --focus: #8ab4ff;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR",
+    "Malgun Gothic", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  word-break: keep-all;
+  padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom));
+}
+
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+button, input { font: inherit; color: inherit; }
+
+/* ---- 맨 위 ---- */
+
+.top { padding: 12px 16px 8px; padding-top: calc(12px + env(safe-area-inset-top)); }
+.top__title { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.top h1 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+.asof { margin: 0; color: var(--muted); font-size: 13px; }
+
+.banner { margin: 0 0 8px; padding: 8px 12px; border-radius: 8px; font-size: 14px; font-weight: 600; }
+.banner--sample { background: var(--tag); color: var(--tag-ink); }
+.banner--offline { background: var(--mid-bg); color: var(--ink); }
+.banner--install { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: var(--surface); border: 1px solid var(--line); font-weight: 500; }
+.banner--install button { min-height: 44px; padding: 0 12px; border: 0; background: none;
+  color: var(--muted); text-decoration: underline; cursor: pointer; }
+
+/* ---- 목록과 검색 결과 ---- */
+
+.view { padding: 0 16px 16px; outline: none; }
+
+.empty { margin: 48px 8px; text-align: center; color: var(--muted); }
+.muted { margin: 4px 0; color: var(--muted); font-size: 14px; }
+
+.rows { list-style: none; margin: 0; padding: 0; }
+.rows > li { border-bottom: 1px solid var(--line); }
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 8px 4px;
+  color: inherit;
+  text-decoration: none;
+}
+.row:active { background: var(--mid-bg); }
+.row__name { font-weight: 650; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.row__qty { font-weight: 800; }
+.row__stale { color: var(--muted); font-size: 12px; font-weight: 400; }
+.row__price { font-weight: 700; text-align: right; white-space: nowrap; }
+.row__unit { color: var(--muted); font-size: 13px; font-weight: 500; }
+.row--gone { grid-template-columns: 1fr auto; color: var(--muted); }
+.row--gone .row__price { font-weight: 500; }
+
+.sig { display: inline-block; min-width: 52px; padding: 2px 8px; border-radius: 999px; font-size: 13px;
+  font-weight: 700; text-align: center; white-space: nowrap; }
+.sig--high { color: var(--high); background: var(--high-bg); }
+.sig--low { color: var(--low); background: var(--low-bg); }
+.sig--mid { color: var(--mid); background: var(--mid-bg); }
+
+.group { display: flex; align-items: baseline; gap: 8px; margin: 20px 0 2px; font-size: 17px; }
+.group__count { color: var(--muted); font-size: 13px; font-weight: 500; }
+
+.result { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; }
+.add { min-height: 44px; min-width: 76px; padding: 0 12px; border: 1.5px solid var(--ink); border-radius: 999px;
+  background: var(--surface); font-weight: 700; cursor: pointer; }
+.add--done { background: var(--ink); color: var(--paper); }
+
+/* ---- 상세 ---- */
+
+.detail { padding-top: 4px; }
+.detail__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.detail__name { margin: 0; font-size: 22px; letter-spacing: -0.02em; }
+.detail__meta { margin: 2px 0 16px; color: var(--muted); font-size: 14px; }
+.detail h3 { margin: 22px 0 4px; font-size: 15px; }
+.detail h3 small { color: var(--muted); font-weight: 500; font-size: 12px; }
+.detail__sub { margin: 10px 0 0; color: var(--muted); font-size: 14px; }
+.detail__range { margin: 0; font-size: 17px; font-weight: 700; }
+.detail__season { margin: 0; font-size: 18px; font-weight: 800; }
+.detail__season.sig--high { color: var(--high); }
+.detail__season.sig--low { color: var(--low); }
+
+/* 노란 마트 가격표 모양의 단위 가격 — 이 화면에서 가장 눈에 띄는 한 가지 */
+.tag {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  padding: 12px 22px 12px 34px;
+  background: var(--tag);
+  color: var(--tag-ink);
+  border-radius: 6px 14px 14px 6px;
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.08);
+}
+.tag::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--paper);
+}
+.tag__unit { font-size: 14px; font-weight: 600; }
+.tag__price { font-size: 38px; line-height: 1.1; font-weight: 900; letter-spacing: -0.03em; }
+
+.chart { display: block; width: 100%; height: auto; margin-top: 4px; }
+.chart__base { stroke: var(--line); stroke-width: 1; }
+.chart__line { fill: none; stroke: var(--ink); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.chart__dot { fill: var(--ink); }
+.chart__label { fill: var(--muted); font-size: 11px; }
+
+/* ---- 맨 아래 고정 영역 ---- */
+
+.dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 8px 16px calc(12px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+
+.total { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 2px 4px 8px; }
+.total__label { color: var(--muted); font-size: 14px; }
+.total__value { font-size: 18px; }
+.total__note { width: 100%; color: var(--muted); font-size: 12px; }
+
+.search { position: relative; }
+.search input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 48px 0 16px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  font-size: 17px;
+}
+.search input::-webkit-search-cancel-button { display: none; }
+.search__clear { position: absolute; right: 2px; top: 2px; width: 44px; height: 44px; border: 0;
+  border-radius: 50%; background: none; color: var(--muted); font-size: 18px; cursor: pointer; }
+
+.dock__row { display: flex; gap: 10px; align-items: center; }
+.btn { flex: 1; min-height: 48px; padding: 0 16px; border: 1.5px solid var(--ink); border-radius: 999px;
+  background: var(--surface); font-weight: 800; font-size: 16px; cursor: pointer; }
+.btn--primary { background: var(--ink); color: var(--paper); }
+.btn--text { display: block; width: 100%; min-height: 44px; margin-top: 4px; border: 0; background: none;
+  color: var(--high); font-weight: 600; }
+
+.stepper { display: inline-flex; align-items: center; border: 1.5px solid var(--line); border-radius: 999px; }
+.stepper button { width: 48px; height: 48px; border: 0; background: none; font-size: 22px; font-weight: 700;
+  cursor: pointer; }
+.stepper button:disabled { color: var(--line); cursor: default; }
+.stepper output { min-width: 28px; text-align: center; font-size: 18px; font-weight: 800; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { scroll-behavior: auto !important; }
+}
