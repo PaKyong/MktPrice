@@ -13,6 +13,7 @@ from collector.models import CATEGORIES, Item, OverallRow
 from collector.units import classify_unit
 
 TOP_RANK = "상품"
+ITEMS_PATH = Path(__file__).parent / "items.json"
 
 
 def build_items(rows: List[OverallRow], rank_code: str) -> List[Item]:

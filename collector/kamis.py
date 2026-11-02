@@ -22,6 +22,7 @@ BASE_URL = "https://www.kamis.or.kr/service/price/xml.do"
 RETRY_WAITS = (2, 4, 8)
 TIMEOUT_SECONDS = 30
 NO_DATA_RESPONSE: Dict[str, Any] = {"data": ["001"]}
+SAMPLE_DIR = Path(__file__).parent / "sample"
 
 
 class Source(Protocol):
