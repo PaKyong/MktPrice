@@ -1,0 +1,70 @@
+"""KAMIS 응답 해석 시험."""
+
+from datetime import date
+
+import pytest
+
+from collector.parse import (
+    KamisError,
+    is_large_retail,
+    parse_category,
+    parse_day,
+    parse_period,
+    parse_price,
+)
+
+
+def test_parse_price() -> None:
+    assert parse_price("2,400") == 2400
+    assert parse_price("-") is None
+    assert parse_price("") is None
+    assert parse_price(None) is None
+    assert parse_price("0") is None
+
+
+def test_parse_day_forms() -> None:
+    today = date(2026, 11, 2)
+    assert parse_day("2026-11-02", today) == date(2026, 11, 2)
+    assert parse_day("당일 (11/02)", today) == date(2026, 11, 2)
+    # 오늘보다 뒤 달이면 작년 날짜다.
+    assert parse_day("12/30", date(2027, 1, 2)) == date(2026, 12, 30)
+
+
+def test_is_large_retail() -> None:
+    assert is_large_retail("B-유통") is True
+    assert is_large_retail("경동") is False
+
+
+def test_parse_category_success() -> None:
+    raw = {"data": {"error_code": "000", "item": [{
+        "item_name": "사과", "itemcode": "411", "kind_name": "홍로", "kindcode": "05",
+        "rank": "상품", "unit": "10개", "day1": "당일 (11/02)", "dpr1": "32,000",
+        "day3": "1주일전 (10/26)", "dpr3": "31,000", "day5": "1개월전 (10/02)", "dpr5": "-",
+        "day6": "1년전 (11/02)", "dpr6": "28,500", "day7": "평년", "dpr7": "27,100"}]}}
+    [row] = parse_category(raw, "400", date(2026, 11, 2))
+    assert (row.category_code, row.item_name, row.kind_name) == ("400", "사과", "홍로")
+    assert (row.item_code, row.kind_code, row.rank, row.unit) == ("411", "05", "상품", "10개")
+    assert row.as_of == date(2026, 11, 2)
+    assert (row.today, row.week_ago, row.month_ago, row.year_ago, row.normal) == (
+        32000, 31000, None, 28500, 27100)
+
+
+def test_parse_category_no_data_is_empty() -> None:
+    assert parse_category({"data": ["001"]}, "400", date(2026, 11, 2)) == []
+    assert parse_category({"data": {"error_code": "001"}}, "400", date(2026, 11, 2)) == []
+
+
+def test_parse_category_error_raises() -> None:
+    with pytest.raises(KamisError):
+        parse_category({"data": ["900"]}, "400", date(2026, 11, 2))
+
+
+def test_parse_period_skips_summary_and_empty_rows() -> None:
+    raw = {"data": {"error_code": "000", "item": [
+        {"countyname": "서울", "marketname": "B-유통", "yyyy": "2026", "regday": "11/02", "price": "3,250"},
+        {"countyname": "서울", "marketname": "경동", "yyyy": "2026", "regday": "11/02", "price": "2,900"},
+        {"countyname": "평균", "marketname": "", "yyyy": "2026", "regday": "11/02", "price": "3,100"},
+        {"countyname": "부산", "marketname": "C-유통", "yyyy": "2026", "regday": "11/02", "price": "-"}]}}
+    rows = parse_period(raw)
+    assert [(r.market, r.price, r.large) for r in rows] == [("B-유통", 3250, True), ("경동", 2900, False)]
+    assert rows[0].day == date(2026, 11, 2)

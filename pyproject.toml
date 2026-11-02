@@ -1,0 +1,14 @@
+[project]
+name = "market-price"
+version = "0.1.0"
+description = "KAMIS 소매가격으로 대형마트 가격표를 비교하는 장보기 가격 페이지"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.pytest.ini_options]
+testpaths = ["collector/tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
