@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 지금 상태
 - 기획 중이다. 지금 상태와 정한 것은 `docs/decisions.md`에 있다. 이 파일에는 정한 것만 옮긴다.
 - 정한 설계를 한곳에 모은 문서는 `docs/design.md`다(2026-11-02 사용자 확정).
+- 구현 계획은 `docs/plan.md`다(Task 1~9, 체크 상자로 진행을 표시한다).
 
 ## 프로젝트 목적 (2026-11-02 정함)
 - 대형마트 안에서 가격표의 값이 적당한지 판단한다. 품목별 KAMIS 오늘 평균 단위 가격과 "요즘 평년보다 18% 비싼 시기" 같은 한 줄을 보여 주고, 비교는 사람이 눈으로 한다.
