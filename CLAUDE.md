@@ -73,6 +73,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 4. git과 커밋
 - 저장소는 GitHub `PaKyong/MktPrice`(공개)다. 브랜치를 나누지 않고 `main`에 바로 커밋한다.
+- 원격 주소는 SSH(`git@github.com:PaKyong/MktPrice.git`)다. 이 컴퓨터에는 HTTPS용 GitHub 로그인 정보가 없어서 HTTPS 주소로는 푸시가 안 된다.
 - **git 사용자**: 이 저장소에만 `Yongmin Park` / `39518302+PaKyong@users.noreply.github.com`(GitHub 가림 주소)으로 설정했다. 공개 저장소라 실제 이메일이 커밋 기록에 드러나지 않게 하려는 것이다.
 - **git에 넣지 않는 것**: 목록은 `.gitignore`에 있다.
 - **커밋**: Claude가 일 한 단위(구현과 검증)를 끝내면 묻지 않고 커밋하고, 보고에 커밋 번호를 적는다. 결정 기록·문서 수정도 같다.
