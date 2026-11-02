@@ -46,7 +46,7 @@ const signalChip = (e) => (e.signal ? h("span", { class: `sig ${signalClass[e.si
 
 function renderTop() {
   const { data } = state;
-  $("asof").textContent = `${md(data.as_of)} 기준 · 출처 KAMIS`;
+  $("asof").textContent = `${md(data.as_of)} 기준 · 출처 ${data.source}`;
   $("banner-sample").hidden = data.source !== "샘플";
   const offline = $("banner-offline");
   offline.hidden = navigator.onLine;
