@@ -26,7 +26,8 @@ jobs:
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
     # KAMIS가 응답 없이 매달려도 몇 시간씩 돌지 않게 한다(보통은 몇 분).
-    timeout-minutes: 30
+    # 참가격 단계는 자기 제한(15분)이 따로 있고, 그 몫을 더해 넉넉히 둔다.
+    timeout-minutes: 45
     permissions:
       contents: write
     # 맨 끝 emart-check가 참가격 단계의 결과를 본다.
@@ -88,9 +89,12 @@ jobs:
       # 키(DATA_GO_KR_KEY)가 없으면 "참가격 키 없음"을 남기고 성공으로 끝난다.
       # 실패해도 KAMIS 커밋과 배포는 하고, 맨 끝 emart-check에서 실행을 실패로 끝낸다.
       # KAMIS 단계가 실패한 날은 여기까지 오지 않고 다음 실행에서 받는다.
+      # 새 달이 있는 날은 3개 달을 쪽마다 70번쯤 받는다. 느린 날 작업 전체가 시간 제한에 걸리면
+      # continue-on-error로도 받지 못해 배포(그날 KAMIS 가격)까지 빠지므로, 이 단계에 따로 제한을 둔다.
       - name: 이마트 값(참가격) 받기
         id: emart
         continue-on-error: true
+        timeout-minutes: 15
         run: uv run python -m collector.emart
 
       - name: 이마트 파일 바뀌었으면 커밋·푸시
