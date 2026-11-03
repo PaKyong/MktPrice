@@ -1,17 +1,5 @@
 /* 장보기 가격 — 화면 전체가 장보기 예상 영수증 한 장(설계 8절 "생김새") */
 
-@font-face {
-  font-family: "MktReceipt";
-  src: url("fonts/receipt-regular.woff2") format("woff2");
-  font-weight: 400;
-  font-display: swap;
-}
-@font-face {
-  font-family: "MktReceipt";
-  src: url("fonts/receipt-bold.woff2") format("woff2");
-  font-weight: 700;
-  font-display: swap;
-}
 
 :root {
   --base: #d8d3c6;
@@ -55,7 +43,7 @@ body {
   padding-top: env(safe-area-inset-top);
   background: var(--base);
   color: var(--ink);
-  font-family: "MktReceipt", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR",
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR",
     "Malgun Gothic", sans-serif;
   font-size: 16px;
   line-height: 1.55;

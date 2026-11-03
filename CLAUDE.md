@@ -13,15 +13,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 샘플 응답 만들기: `uv run python -m collector.make_sample` — `collector/sample/`(14MB, git에 넣지 않음)에 만든다. 키 없이 수집하기 전에 한 번 돌린다.
 - 수집: `uv run python -m collector` — 키(환경변수 `KAMIS_CERT_KEY`, `KAMIS_CERT_ID`)가 있으면 KAMIS, 없으면 샘플로 `data/prices.json`을 만든다. 기준일과 출처가 기존 파일과 같으면 건너뛴다. 실제 데이터가 든 파일은 샘플로 덮어쓰지 않는다.
 - 시험: `uv run pytest` (인터넷 없이 돈다). 하나만: `uv run pytest collector/tests/test_compute.py::test_signal_boundaries`
-- 품종 목록 다시 만들기: `uv run python -m collector.make_items` — 키를 받은 뒤 실제 품종과 조사 단위로 `collector/items.json`을 바꿀 때 쓴다. 바꾼 뒤에는 글꼴도 다시 만든다(아래).
+- 품종 목록 다시 만들기: `uv run python -m collector.make_items` — 키를 받은 뒤 실제 품종과 조사 단위로 `collector/items.json`을 바꿀 때 쓴다.
 - 화면 확인: `uv run python -m http.server 8000`(앱 안 브라우저는 `.claude/launch.json`의 "web") 뒤 `http://localhost:8000`을 휴대폰 크기(375×812)로 연다. 화면은 자동 시험이 없으므로(설계 11절) 검색 → 담기 → 개수 → 총액 → 상세 → 빼기를 직접 해 본다.
-- 영수증 글꼴 만들기: `uv run python tools/make_font.py` — 원본 나눔고딕코딩(`tools/fonts-src/`, git에 넣지 않음)에서 앱이 쓰는 글자만 남긴 `fonts/receipt-*.woff2`를 만든다. 품종 목록 파일이나 화면 문구(`index.html`, `app.js`)를 바꾸면 다시 돌린다. 원본이 없으면 명령이 받을 주소를 알려 준다.
 - 화면 파일(HTML·CSS·JS·아이콘)을 고치면 `sw.js` 맨 위 `CACHE`의 숫자를 올린다(예: `mp-v1` → `mp-v2`). 안 올리면 폰에 저장된 옛 화면이 계속 열린다. 아이콘은 `uv run python tools/make_icons.py`로 다시 만든다.
 
 ## 예약 실행과 배포 (`.github/workflows/collect.yml`)
 - 평일 한국 19시(UTC 10시)와 Actions 탭의 "Run workflow"(지금 실행)로 돈다. Secrets에 `KAMIS_CERT_KEY`, `KAMIS_CERT_ID`가 없으면 "키 없음"을 남기고 수집을 건너뛴 뒤 배포만 한다. 키가 있으면 수집하고 `data/prices.json`이 바뀌었을 때만 `github-actions[bot]`이 `chore(data): <기준일> 가격 갱신`으로 커밋·푸시한다.
 - 배포도 같은 워크플로가 한다(Actions 기본 토큰으로 푸시한 커밋은 다른 워크플로를 깨우지 않아서). 사람이 `main`에 푸시하면 수집 없이 배포만 돈다. 배포에는 화면 파일과 `data/`만 들어간다. 저장소 설정에서 Pages 출처가 "GitHub Actions"여야 한다.
-- 품종 목록 다시 만들기: Actions의 "Run workflow" 창에서 "품종 목록도 다시 만들기"를 켜고 돌리면, Secrets의 키로 `collector.make_items`를 돌린 뒤 `--force`로 수집해 `collector/items.json`과 `data/prices.json`을 함께 커밋한다(`…, 품종 목록 다시 만듦`). 그 뒤 받아 와서 `tools/make_font.py`로 글꼴을 다시 만들고 `sw.js`의 `CACHE`를 올린다(글꼴 원본은 내 컴퓨터에만 있다).
+- 품종 목록 다시 만들기: Actions의 "Run workflow" 창에서 "품종 목록도 다시 만들기"를 켜고 돌리면, Secrets의 키로 `collector.make_items`를 돌린 뒤 `--force`로 수집해 `collector/items.json`과 `data/prices.json`을 함께 커밋한다(`…, 품종 목록 다시 만듦`).
 - Actions가 평일마다 `data/prices.json`을 커밋하므로, 푸시 전에 먼저 받아온다(`git pull --rebase`). `data/prices.json`은 손으로 고치지 않는다.
 
 ## 프로젝트 목적 (2026-11-02 정함)
