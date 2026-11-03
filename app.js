@@ -103,13 +103,17 @@ function renderTop() {
 // ---- 한 줄 ----
 
 // 줄 가운데의 30일 작은 그래프. 색은 오른쪽 % 하나에만 쓰므로 회색 선 하나. 값이 둘보다 적으면 그리지 않는다.
+// 세로 폭은 적어도 평균의 위아래 10%로 잡는다. 꽉 채워 그리면 30일 동안 1%만 움직여도 절벽처럼 보인다.
 function sparkline(trend) {
   if (trend.length < 2) return null;
   const values = trend.map(([, v]) => v);
-  const min = Math.min(...values);
-  const span = Math.max(...values) - min || 1;
+  const low = Math.min(...values);
+  const high = Math.max(...values);
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  const half = Math.max((high - low) / 2, mean * 0.1);
+  const min = (low + high) / 2 - half;
   const points = values
-    .map((v, i) => `${((i / (values.length - 1)) * 56).toFixed(1)},${(22 - ((v - min) / span) * 20).toFixed(1)}`)
+    .map((v, i) => `${((i / (values.length - 1)) * 56).toFixed(1)},${(22 - ((v - min) / (half * 2)) * 20).toFixed(1)}`)
     .join(" ");
   const svg = svgEl("svg", { viewBox: "0 0 56 24", class: "spark", "aria-hidden": "true" });
   svg.append(svgEl("polyline", { points }));
@@ -458,26 +462,60 @@ function renderSearch() {
 
 // ---- 상세 ----
 
-function trendChart(trend) {
-  const values = trend.map(([, v]) => v);
+// 상세의 30일 그래프. 큰 글씨와 같은 단위 가격(100g당, 1개당)으로 그리고, 아래에 처음·끝 날짜를 쓴다.
+// 조사 단위 값에 (단위 가격 ÷ 조사 단위 값)을 곱해 바꾼다. 오늘 값은 큰 글씨와 똑같고, 다른 날은 1원 안쪽으로 맞다.
+function trendChart(e) {
+  const values = e.trend.map(([, v]) => Math.round((v * e.unit_price) / e.price));
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 1;
   const w = 320;
-  const top = 14;
-  const bottom = 70;
-  const x = (i) => (trend.length === 1 ? w : (i / (trend.length - 1)) * w);
+  const top = 18;
+  const bottom = 74;
+  const x = (i) => (values.length === 1 ? w - 4 : 4 + (i / (values.length - 1)) * (w - 8));
   const y = (v) => bottom - ((v - min) / span) * (bottom - top);
   const points = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-  const svg = svgEl("svg", { viewBox: `0 0 ${w} 84`, class: "chart", role: "img",
-                             "aria-label": `최근 30일 평균: 최저 ${won(min)}, 최고 ${won(max)}` });
+  const svg = svgEl("svg", { viewBox: `0 0 ${w} 100`, class: "chart", role: "img",
+                             "aria-label": `최근 30일 ${perUnit(e)} 평균: 최저 ${won(min)}, 최고 ${won(max)}` });
   svg.append(
     svgEl("line", { x1: 0, y1: bottom, x2: w, y2: bottom, class: "chart__base" }),
     svgEl("polyline", { points, class: "chart__line" }),
     svgEl("circle", { cx: x(values.length - 1), cy: y(values.at(-1)), r: 3.5, class: "chart__dot" }),
-    svgEl("text", { x: 0, y: 10, class: "chart__label" }, `최고 ${max.toLocaleString("ko-KR")}`),
-    svgEl("text", { x: 0, y: 82, class: "chart__label" }, `최저 ${min.toLocaleString("ko-KR")}`));
+    svgEl("text", { x: 0, y: 12, class: "chart__label" }, `최고 ${won(max)}`),
+    svgEl("text", { x: w / 2, y: 96, "text-anchor": "middle", class: "chart__label" }, `최저 ${won(min)}`),
+    svgEl("text", { x: w, y: 96, "text-anchor": "end", class: "chart__label" }, mdot(e.trend.at(-1)[0])));
+  if (values.length > 1) svg.append(svgEl("text", { x: 0, y: 96, class: "chart__label" }, mdot(e.trend[0][0])));
   return svg;
+}
+
+// 상세의 가격 막대. 회색 칸(band), 검은 눈금(avg), 점(dots: [값, 칠할 class]), 아래 숫자(nums)와 그 아래 흐린 말(subs)을
+// 그린다. movePin(값)은 막대 위의 노란 가격표 핀을 그 값 자리로 옮긴다. 막대 밖 값은 끝에 붙이고 ◀·▶를 단다.
+// 핀 종이는 화면 밖으로 나가지 않게 막대 안쪽(양옆 여백 6px까지)에 두고, 아래 뾰족한 끝(--tip)만 값 자리를 가리킨다.
+function priceRuler({ min, max, band, avg, dots = [], nums, subs }) {
+  const at = (v) => ((v - min) / (max - min)) * 100;
+  const pinText = h("b");
+  const pin = h("div", { class: "pin", hidden: true }, pinText);
+  const node = h("div", { class: "ruler", "aria-hidden": "true" },
+    h("div", { class: "ruler__track" }),
+    h("div", { class: "ruler__band", style: `left:${at(band[0])}%;width:${at(band[1]) - at(band[0])}%` }),
+    avg !== undefined ? h("div", { class: "ruler__avg", style: `left:${at(avg)}%` }) : null,
+    dots.map(([v, cls]) => h("div", { class: `ruler__dot ${cls}`, style: `left:${at(v)}%` })),
+    nums.map(([v, text]) => h("div", { class: "ruler__num", style: `left:${at(v)}%` }, text)),
+    subs.map(([v, text]) => h("div", { class: "ruler__sub", style: `left:${at(v)}%` }, text)),
+    pin);
+  const movePin = (v) => {
+    pin.hidden = !(v > 0);
+    if (pin.hidden) return;
+    const p = at(v);
+    pinText.textContent = `${p < 0 ? "◀ " : p > 100 ? "▶ " : ""}${v.toLocaleString("ko-KR")}`;
+    const w = node.clientWidth;
+    const half = pin.offsetWidth / 2;
+    const x = (Math.min(100, Math.max(0, p)) / 100) * w;
+    const left = Math.min(w + 6 - half, Math.max(half - 6, x));
+    pin.style.left = `${left}px`;
+    pin.style.setProperty("--tip", `${x - left}px`);
+  };
+  return { node, movePin };
 }
 
 // 상세 정보 줄: 왼쪽 흐린 이름, 오른쪽 값.
@@ -498,30 +536,40 @@ function renderStar(id, name, on) {
   };
 }
 
-// 상세 화면의 가격표 값 칸. 숫자를 치는 대로 judge(값)이 낸 한 마디 판정을 아래에 보인다. 저장하지 않는다.
-function priceTagBox(placeholder, judge) {
+// 상세 화면의 가격표 값 칸. 숫자를 치는 대로 막대 위 핀을 옮기고(movePin), judge(값)이 낸 한 마디와 덧말을
+// 아래에 보인다. 비어 있으면 흐린 안내(hint)를 보인다. 저장하지 않는다.
+function priceTagBox(label, hint, judge, movePin) {
   const result = h("p", { class: "judge__result", "aria-live": "polite" });
-  const input = h("input", { type: "text", inputmode: "numeric", placeholder, autocomplete: "off",
-                             "aria-label": "가격표 값", enterkeyhint: "done" });
+  const showHint = () => result.replaceChildren(h("span", {}, hint));
+  const input = h("input", { type: "text", inputmode: "numeric", placeholder: "값 넣기", autocomplete: "off",
+                             "aria-label": label, enterkeyhint: "done" });
   input.addEventListener("input", () => {
     const v = Number(input.value.replace(/[^0-9]/g, ""));
-    const verdict = v > 0 ? judge(v) : null;
-    result.className = `judge__result ${verdict?.cls ?? ""}`;
-    result.textContent = verdict?.text ?? "";
+    movePin?.(v);
+    if (!(v > 0)) return showHint();
+    const verdict = judge(v);
+    result.replaceChildren(h("b", { class: verdict.cls }, verdict.head), h("span", {}, verdict.sub));
   });
+  showHint();
   return h("form", { class: "judge", onsubmit: (ev) => { ev.preventDefault(); input.blur(); } },
-    h("label", { class: "judge__label" }, h("span", {}, "가격표 값"), input, h("span", {}, "원")), result);
+    h("label", { class: "judge__label" }, h("span", {}, label), input), result);
 }
 
-// KAMIS 품종: 가격표의 단위 가격을 대형유통 평균과 가게 가운데 절반 범위에 견준다.
-function judgeKamis(e) {
+// KAMIS 품종: 가격표의 단위 가격을 가게 가운데 절반 범위와 평균에 견준다. shops는 "대형마트" 같은 가게 이름.
+// 조사처가 4곳보다 적으면 범위가 가장 낮은 값~가장 높은 값이라(설계 6절) "넷 중 셋" 대신 곳 수로 말한다.
+function judgeKamis(e, shops) {
   const [lo, hi] = e.unit_range;
-  const range = `가게 가운데 절반(${lo.toLocaleString("ko-KR")}~${won(hi)})`;
+  const avg = e.unit_price;
+  const few = e.stores < 4;
   return (v) => {
-    const pct = Math.round(((v - e.unit_price) / e.unit_price) * 100);
-    const avg = pct > 0 ? `평균보다 ${pct}% 비싸요` : pct < 0 ? `평균보다 ${-pct}% 싸요` : "평균과 같아요";
-    const where = v > hi ? `${range}보다 비쌈` : v < lo ? `${range}보다 쌈` : `${range} 안`;
-    return { text: `${avg} · ${where}`, cls: pct > 0 ? "up" : pct < 0 ? "down" : "" };
+    const diff = v - avg;
+    const pct = Math.round((Math.abs(diff) / avg) * 100);
+    const sub = diff === 0 ? "평균과 같아요"
+      : `평균 ${won(avg)}보다 ${won(Math.abs(diff))}(${pct}%) ${diff > 0 ? "비쌈" : "쌈"}`;
+    if (v > hi) return { head: few ? `조사한 ${shops} ${e.stores}곳보다 비싸요` : `${shops} 넷 중 셋보다 비싸요`, sub, cls: "up" };
+    if (v < lo) return { head: few ? `조사한 ${shops} ${e.stores}곳보다 싸요` : `${shops} 넷 중 셋보다 싸요`, sub, cls: "down" };
+    const inside = lo === hi ? `조사한 ${shops} 값과 같아요` : `조사한 ${shops} 값 사이예요`;
+    return { head: few ? inside : `${shops}에서 흔한 값이에요`, sub, cls: "" };
   };
 }
 
@@ -529,18 +577,28 @@ function judgeKamis(e) {
 function judgeEmart(e) {
   const low = e.low?.price;
   return (v) => {
-    if (v > e.usual) return { text: `평소 값보다 ${won(v - e.usual)} 비싸요`, cls: "up" };
-    if (v === e.usual) return { text: "평소 값이에요", cls: "" };
-    if (low && v === low) return { text: "행사 때 최저 값이에요", cls: "down" };
-    if (low && v < low) return { text: `행사 때 최저(${won(low)})보다도 ${won(low - v)} 싸요`, cls: "down" };
-    return { text: `평소 값보다 ${won(e.usual - v)} 싸요${low ? ` · 행사 때 최저(${won(low)})보다는 비쌈` : ""}`,
-             cls: "down" };
+    if (v > e.usual) return { head: `평소 값보다 ${won(v - e.usual)} 비싸요`, sub: "3개월 동안 본 값보다 비싸요", cls: "up" };
+    if (v === e.usual) {
+      return { head: "평소 값이에요", sub: low ? `행사 때는 ${won(low)}까지 내렸어요` : "3개월 동안 이 값이었어요", cls: "" };
+    }
+    if (!low) return { head: `평소 값보다 ${won(e.usual - v)} 싸요`, sub: "3개월 동안 본 값 가운데 가장 싸요", cls: "down" };
+    if (v < low) return { head: `행사 최저보다도 ${won(low - v)} 싸요`, sub: "3개월 동안 본 값 가운데 가장 싸요", cls: "down" };
+    if (v === low) return { head: "행사 때 최저 값이에요", sub: `평소보다 ${won(e.usual - v)} 싸요`, cls: "down" };
+    return { head: `평소 값보다 ${won(e.usual - v)} 싸요`, sub: `행사 때 최저(${won(low)})보다는 비쌈`, cls: "down" };
   };
 }
 
-// 이마트 상품 상세: 평소 값, 행사 때 최저 값, 최근 3개월 조사일별 대표값.
+// 이마트 상품 상세: 평소 값, 행사 때 최저 값, 가격 막대, 최근 3개월 조사일별 대표값.
+// 행사가 없었으면 조사 값이 모두 평소 값이라 막대에 보일 것이 없어, 막대 없이 가격표 값 칸만 둔다.
 function renderEmartDetail(e) {
   const low = e.low ? pctText(e.low.pct) : null;
+  const num = (n) => n.toLocaleString("ko-KR");
+  const ruler = e.low ? priceRuler({
+    min: e.low.price - (e.usual - e.low.price) / 2, max: e.usual + (e.usual - e.low.price) / 2,
+    band: [e.low.price, e.usual],
+    dots: e.history.map(([, price]) => [price, price === e.low.price ? "ruler__dot--low" : ""]),
+    nums: [[e.low.price, num(e.low.price)], [e.usual, num(e.usual)]],
+    subs: [[e.low.price, "행사 최저"], [e.usual, "평소 값"]] }) : null;
   $("view").append(h("section", { class: "detail" },
     h("h1", { class: "detail__name" }, e.name),
     h("p", { class: "detail__meta" },
@@ -550,7 +608,10 @@ function renderEmartDetail(e) {
       ? h("p", { class: "detail__normal down" },
           `행사 때 ${won(e.low.price)} (${mdot(e.low.day)}) · 평소보다 ${low.text}`)
       : h("p", { class: "detail__normal muted" }, "3개월 동안 행사 없음"),
-    priceTagBox("묶음 값", judgeEmart(e)),
+    ruler ? [h("p", { class: "ruler-cap" }, "최근 3개월 동안 이마트에서 본 값이에요"), ruler.node] : null,
+    priceTagBox("가격표 묶음 값",
+      ruler ? "가격표 값을 넣으면 막대 위에 노란 가격표가 꽂혀요" : "가격표 값을 넣으면 평소 값과 견줘 알려 줘요",
+      judgeEmart(e), ruler?.movePin),
     h("h2", { class: "cat" }, "최근 3개월 조사"),
     h("ul", { class: "info" }, e.history.map(([day, price]) =>
       info(mdot(day), day === e.low?.day ? h("span", { class: "down" }, won(price)) : won(price)))),
@@ -582,10 +643,22 @@ function renderDetail(id) {
     return;
   }
   const basis = state.data.basis.compare === "전국 대형유통 평균" ? "대형유통" : "조사처";
+  const shops = basis === "대형유통" ? "대형마트" : "가게";
   const num = (n) => n.toLocaleString("ko-KR");
   const normal = pctText(e.change.normal);
   const changes = [["1주 전보다", e.change.week], ["1개월 전보다", e.change.month], ["1년 전보다", e.change.year]]
     .filter(([, v]) => v !== null);
+  // 가격 막대: 가게 가운데 절반을 회색 칸, 평균을 눈금으로. 양옆 여백은 칸 폭의 절반, 적어도 평균의 12%.
+  // 칸 양 끝 숫자가 너무 가까우면(막대 폭의 18% 안쪽) 가운데에 "153~199"로 하나만 쓴다.
+  const [lo, hi] = e.unit_range;
+  const avg = e.unit_price;
+  const pad = Math.max((hi - lo) / 2, avg * 0.12);
+  const min = Math.min(lo, avg) - pad;
+  const max = Math.max(hi, avg) + pad;
+  const nums = lo === hi ? [[lo, num(lo)]]
+    : (hi - lo) / (max - min) < 0.18 ? [[(lo + hi) / 2, `${num(lo)}~${num(hi)}`]]
+      : [[lo, num(lo)], [hi, num(hi)]];
+  const ruler = priceRuler({ min, max, band: [lo, hi], avg, nums, subs: [[avg, "평균"]] });
   view.append(h("section", { class: "detail" },
     h("h1", { class: "detail__name" }, name),
     h("p", { class: "detail__meta" },
@@ -595,13 +668,16 @@ function renderDetail(id) {
       ? h("p", { class: "detail__normal" }, "평년보다 ", h("span", { class: normal.cls }, normal.text),
           e.signal ? ` · ${e.signal}` : null)
       : h("p", { class: "detail__normal muted" }, "평년 값 없음"),
-    priceTagBox(`${perUnit(e)} 값`, judgeKamis(e)),
+    h("p", { class: "ruler-cap" }, e.stores >= 4 ? `${perUnit(e)}, ${shops} 절반은 이 사이 값이에요`
+      : `${perUnit(e)}, 조사한 ${shops} ${e.stores}곳 값${lo === hi ? "이에요" : "이 이 사이예요"}`),
+    ruler.node,
+    priceTagBox(`가격표 ${perUnit(e)}`, `가격표에 적힌 ${perUnit(e)} 값을 넣으면 막대 위에 노란 가격표가 꽂혀요`,
+      judgeKamis(e, shops), ruler.movePin),
     e.trend.length
-      ? [trendChart(e.trend), h("p", { class: "chart-cap" }, `30일 · ${e.unit} 기준`)]
+      ? [h("p", { class: "chart-cap" }, `30일 · ${perUnit(e)}`), trendChart(e)]
       : h("p", { class: "muted" }, "추이 값이 없어요"),
     h("ul", { class: "info" },
       info(e.unit, won(e.price)),
-      info("가게마다(가운데 절반)", `${num(e.unit_range[0])}~${num(e.unit_range[1])}/${e.unit_label}`),
       changes.map(([label, v]) => {
         const p = pctText(v);
         return info(label, h("span", { class: p.cls }, p.text));

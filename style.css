@@ -10,7 +10,10 @@
   /* 내리면(사는 사람에게 좋은 쪽) 빨강, 오르면 파랑 */
   --down: #e0343a;
   --up: #2f6fd8;
+  /* 샘플·가격 멈춤 띠와 상세의 가격표 핀(진열대 가격표 노랑) */
   --band: #ffe45c;
+  /* 가격 막대의 회색 칸: 옅은 바탕보다 한 단계 진하게 */
+  --range: #d5dae0;
   /* 즐겨찾기 ★: 흰 바탕 대비 3.2:1 */
   --star: #c08600;
   /* 맨 위 막대 높이. 부류 칸 줄이 그 바로 아래에 붙는다 */
@@ -28,6 +31,7 @@
     --down: #ff5a5f;
     --up: #5b9bff;
     --star: #ffcc33;
+    --range: #3a4048;
     color-scheme: dark;
   }
 }
@@ -160,19 +164,19 @@ button, input { font: inherit; color: inherit; }
 .detail { padding-top: 4px; }
 .detail__name { margin: 0; font-size: 20px; font-weight: 700; line-height: 1.35; }
 .detail__meta { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
-.detail__price { margin: 18px 0 0; font-size: 30px; font-weight: 700; line-height: 1.2; }
-.detail__unit { margin-left: 4px; color: var(--muted); font-size: 15px; font-weight: 400; }
-.detail__normal { margin: 4px 0 8px; font-size: 15px; }
-.chart-cap { margin: 2px 0 12px; color: var(--muted); font-size: 12px; text-align: right; }
+.detail__price { margin: 16px 0 0; font-size: 32px; font-weight: 700; line-height: 1.2; }
+.detail__unit { margin-left: 4px; color: var(--muted); font-size: 16px; font-weight: 400; }
+.detail__normal { margin: 2px 0 0; font-size: 16px; }
+.chart-cap { margin: 20px 0 0; color: var(--muted); font-size: 13px; }
 .info { list-style: none; margin: 0; padding: 0; }
 .info__row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line);
-  font-size: 15px; }
+  font-size: 16px; }
 .info__row:last-child { border-bottom: 0; }
 .info__row > span:first-child { color: var(--muted); }
 .info__row > span:last-child { white-space: nowrap; }
-.detail__foot { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
+.detail__foot { margin: 12px 0 0; color: var(--muted); font-size: 13px; }
 
-.chart { display: block; width: 100%; height: auto; margin-top: 6px; }
+.chart { display: block; width: 100%; height: auto; }
 .chart__base { stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 4 3; }
 .chart__line { fill: none; stroke: var(--text); stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
 .chart__dot { fill: var(--text); }
@@ -182,15 +186,41 @@ button, input { font: inherit; color: inherit; }
   * { scroll-behavior: auto !important; }
 }
 
-/* ---- 상세의 가격표 값 칸과 판정 ---- */
+/* ---- 상세의 가격 막대, 가격표 값 칸과 판정 (설계 17절) ---- */
 
-.judge { margin: 10px 0 14px; }
-.judge__label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 15px; }
-.judge__label input { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border: 0; border-radius: 12px;
-  background: var(--soft); color: var(--text); font-size: 16px; text-align: right; }
-.judge__label input::placeholder { color: var(--muted); }
-.judge__result { margin: 6px 0 0; font-size: 15px; font-weight: 700; }
-.judge__result:empty { display: none; }
+.ruler-cap { margin: 20px 0 0; color: var(--muted); font-size: 13px; }
+/* 위 40px은 가격표 핀 자리, 그 아래 막대, 막대 아래 숫자 줄과 흐린 말 줄 */
+.ruler { position: relative; height: 88px; margin: 0 6px; }
+.ruler__track { position: absolute; left: 0; right: 0; top: 46px; height: 2px; background: var(--line); }
+.ruler__band { position: absolute; top: 40px; height: 14px; min-width: 4px; border-radius: 3px; background: var(--range); }
+.ruler__avg { position: absolute; top: 34px; width: 3px; height: 26px; margin-left: -1.5px; border-radius: 2px;
+  background: var(--text); }
+.ruler__dot { position: absolute; top: 43px; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%;
+  background: var(--muted); }
+.ruler__dot--low { background: var(--down); }
+.ruler__num, .ruler__sub { position: absolute; transform: translateX(-50%); font-size: 13px; line-height: 1.3;
+  white-space: nowrap; }
+.ruler__num { top: 60px; }
+.ruler__sub { top: 77px; color: var(--muted); }
+/* 내 가격표 핀: 노란 종이와 아래 뾰족한 끝 */
+.pin { position: absolute; top: 9px; transform: translateX(-50%); transition: left 0.18s ease-out; }
+.pin[hidden] { display: none; }
+.pin b { display: block; padding: 3px 8px; border-radius: 4px; background: var(--band); color: #191f28;
+  font-size: 15px; line-height: 1.3; white-space: nowrap; box-shadow: 0 0 0 1px rgb(0 0 0 / 12%); }
+.pin::after { content: ""; position: absolute; left: calc(50% + var(--tip, 0px)); top: 100%; margin-left: -6px;
+  border: 6px solid transparent; border-top-color: var(--band); }
+@media (prefers-reduced-motion: reduce) { .pin { transition: none; } }
+
+.judge { margin: 4px 0 0; }
+.judge__label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 16px; }
+.judge__label input { flex: 1; min-width: 0; height: 48px; padding: 0 12px; border: 2px solid var(--text);
+  border-radius: 10px; background: var(--bg); color: var(--text); font-size: 20px; font-weight: 700;
+  text-align: right; }
+.judge__label input::placeholder { color: var(--muted); font-size: 16px; font-weight: 400; }
+.judge__label input:focus-visible { outline: 3px solid var(--band); outline-offset: 1px; }
+.judge__result { min-height: 52px; margin: 10px 0 0; }
+.judge__result b { display: block; font-size: 20px; line-height: 1.35; }
+.judge__result span { color: var(--muted); font-size: 13px; }
 
 /* ---- 즐겨찾기 끌어 옮기기, 밀어 빼기, 되돌리기 띠 ---- */
 
