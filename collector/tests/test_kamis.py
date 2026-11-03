@@ -10,7 +10,7 @@ import pytest
 
 from collector.kamis import (LOOKBACK_DAYS, KamisSource, SampleSource, describe_response, latest_overall,
                              make_source)
-from collector.models import Item
+from collector.models import Item, OverallRow
 from collector.parse import KamisError
 
 APPLE = Item(
@@ -99,8 +99,13 @@ def test_sample_source_reads_files_and_missing_is_no_data(tmp_path: Path) -> Non
     assert src.period(other, date(2026, 10, 3), date(2026, 11, 2)) == {"data": ["001"]}
 
 
-def _row(dpr1: str) -> Dict[str, Any]:
-    return {"itemcode": "211", "kindcode": "01", "item_name": "배추", "kind_name": "봄", "rank": "상품",
+def ANY_ROW(row: OverallRow) -> bool:
+    """모든 줄을 쓰는 줄로 본다."""
+    return True
+
+
+def _row(dpr1: str, rank: str = "상품") -> Dict[str, Any]:
+    return {"itemcode": "211", "kindcode": "01", "item_name": "배추", "kind_name": "봄", "rank": rank,
             "unit": "1포기", "day1": "당일 (11/02)", "dpr1": dpr1, "dpr3": "-", "dpr5": "-", "dpr6": "-",
             "dpr7": "-"}
 
@@ -110,10 +115,12 @@ class DaySource:
 
     name = "시험"
 
-    def __init__(self, last_day: Optional[date], blank: bool = False, fail: bool = False) -> None:
+    def __init__(self, last_day: Optional[date], blank: bool = False, fail: bool = False,
+                 other_rank_value: bool = False) -> None:
         self.last_day = last_day
         self.blank = blank
         self.fail = fail
+        self.other_rank_value = other_rank_value
         self.days: List[date] = []
 
     def category(self, category_code: str, day: date) -> Dict[str, Any]:
@@ -121,13 +128,16 @@ class DaySource:
         if self.fail:
             raise KamisError("KAMIS 오류 코드 200")
         if self.last_day is None or day > self.last_day:
+            if self.other_rank_value:
+                # 2026-11-03 오전 실제 응답: 상품 줄은 값이 비었는데 다른 줄(축산물 등)에만 값이 있다.
+                return {"data": {"error_code": "000", "item": [_row("-"), _row("9,000", rank="1등급")]}}
             return {"data": {"error_code": "000", "item": [_row("-")]}} if self.blank else {"data": ["001"]}
         return {"data": {"error_code": "000", "item": [_row("3,000")]}}
 
 
 def test_latest_overall_steps_back_to_latest_day_with_values() -> None:
     src = DaySource(last_day=date(2026, 11, 2))
-    rows, failed, _ = latest_overall(src, date(2026, 11, 4))
+    rows, failed, _ = latest_overall(src, date(2026, 11, 4), ANY_ROW)
     assert failed == {}
     assert [r.today for r in rows] == [3000] * 6
     assert sorted(set(src.days), reverse=True) == [date(2026, 11, 4), date(2026, 11, 3), date(2026, 11, 2)]
@@ -135,14 +145,14 @@ def test_latest_overall_steps_back_to_latest_day_with_values() -> None:
 
 def test_latest_overall_treats_blank_values_as_no_data() -> None:
     src = DaySource(last_day=date(2026, 11, 2), blank=True)
-    rows, _, _ = latest_overall(src, date(2026, 11, 3))
+    rows, _, _ = latest_overall(src, date(2026, 11, 3), ANY_ROW)
     assert {r.today for r in rows} == {3000}
     assert min(src.days) == date(2026, 11, 2)
 
 
 def test_latest_overall_gives_up_after_seven_days() -> None:
     src = DaySource(last_day=None)
-    rows, failed, tried = latest_overall(src, date(2026, 11, 9))
+    rows, failed, tried = latest_overall(src, date(2026, 11, 9), ANY_ROW)
     assert rows == [] and failed == {}
     assert len(set(src.days)) == LOOKBACK_DAYS == 7
     assert min(src.days) == date(2026, 11, 3)
@@ -152,7 +162,7 @@ def test_latest_overall_gives_up_after_seven_days() -> None:
 
 def test_latest_overall_stops_when_every_category_fails() -> None:
     src = DaySource(last_day=date(2026, 11, 2), fail=True)
-    rows, failed, tried = latest_overall(src, date(2026, 11, 4))
+    rows, failed, tried = latest_overall(src, date(2026, 11, 4), ANY_ROW)
     assert rows == []
     assert tried == ["2026-11-04 100:실패 200:실패 300:실패 400:실패 500:실패 600:실패"]
     assert failed == {code: "KAMIS 오류 코드 200" for code in ("100", "200", "300", "400", "500", "600")}
@@ -168,3 +178,12 @@ def test_describe_response_names_codes_without_echoed_key() -> None:
     assert describe_response({"condition": echoed}) == "모양 모름(NoneType)"
     for raw in ({"condition": echoed, "data": [{"p_cert_key": "SECRETKEY"}]},):
         assert "SECRETKEY" not in describe_response(raw)
+
+
+def test_latest_overall_ignores_values_only_in_rows_it_does_not_use() -> None:
+    src = DaySource(last_day=date(2026, 11, 2), other_rank_value=True)
+    rows, failed, tried = latest_overall(src, date(2026, 11, 3), lambda row: row.rank == "상품")
+    assert failed == {}
+    assert {r.today for r in rows if r.rank == "상품"} == {3000}
+    assert min(src.days) == date(2026, 11, 2)
+    assert len(tried) == 2

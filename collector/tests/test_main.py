@@ -189,3 +189,31 @@ def test_run_without_sample_files_says_how_to_make_them(tmp_path: Path) -> None:
     # 실패 원인을 찾을 수 있게 날마다 받은 응답 모양을 남긴다.
     assert "2026-11-03 100:001 200:001" in str(err.value)
     assert "2026-10-28 100:001" in str(err.value)
+
+
+class LivestockOnlyTodaySource(FailingSource):
+    """정한 날 뒤에는 농수산물 줄의 값이 비고 축산물에만 값이 있는 전체 평균을 준다(2026-11-03 오전 실제 응답)."""
+
+    def __init__(self, inner: SampleSource, last_day: date) -> None:
+        super().__init__(inner)
+        self.last_day = last_day
+
+    def category(self, category_code: str, day: date) -> Dict[str, Any]:
+        raw = json.loads(json.dumps(self.inner.category(category_code, day)))
+        if day <= self.last_day:
+            return raw
+        if category_code == "500":
+            return {"data": {"error_code": "000", "item": [{
+                "itemcode": "4301", "kindcode": "21", "item_name": "소고기", "kind_name": "안심", "rank": "1등급",
+                "unit": "100g", "day1": f"당일 ({day.month:02d}/{day.day:02d})", "dpr1": "14,000"}]}}
+        if isinstance(raw.get("data"), dict):
+            for row in raw["data"]["item"]:
+                row["dpr1"] = "-"
+        return raw
+
+
+def test_run_steps_back_when_only_unused_rows_have_values_today(tmp_path: Path) -> None:
+    out = tmp_path / "prices.json"
+    src = LivestockOnlyTodaySource(sample_source(tmp_path, date(2026, 11, 2)), last_day=date(2026, 11, 2))
+    assert run(src, ITEMS, out, date(2026, 11, 3)) == "updated"
+    assert read(out)["as_of"] == "2026-11-02"

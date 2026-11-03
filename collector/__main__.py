@@ -33,10 +33,15 @@ from collector.parse import KamisError, parse_period
 KST = ZoneInfo("Asia/Seoul")
 
 
-def _collect_overall(source: Source, today: date) -> Tuple[Dict[Tuple[str, str], OverallRow], Dict[str, str],
-                                                           List[str]]:
-    """가장 최근 조사일의 전체 평균에서 품종별 상품 줄, 실패한 부류(부류 → 이유), 날마다의 응답 모양을 돌려준다."""
-    rows, failed, tried = latest_overall(source, today)
+def _collect_overall(source: Source, items: List[Item], today: date
+                     ) -> Tuple[Dict[Tuple[str, str], OverallRow], Dict[str, str], List[str]]:
+    """가장 최근 조사일의 전체 평균에서 품종별 상품 줄, 실패한 부류(부류 → 이유), 날마다의 응답 모양을 돌려준다.
+
+    품종 목록에 있는 상품 줄에 값이 있는 날을 찾는다(축산물처럼 쓰지 않는 줄의 값은 보지 않는다).
+    """
+    wanted = {(item.item_code, item.kind_code) for item in items}
+    rows, failed, tried = latest_overall(
+        source, today, lambda row: row.rank == TOP_RANK and (row.item_code, row.kind_code) in wanted)
     overall = {(row.item_code, row.kind_code): row for row in rows if row.rank == TOP_RANK}
     return overall, failed, tried
 
@@ -79,15 +84,18 @@ def run(source: Source, items: List[Item], out_path: Path, today: date) -> str:
     existing = load_prices(out_path)
     check_sample_guard(existing, source.name)
 
-    overall, failed_categories, tried = _collect_overall(source, today)
+    overall, failed_categories, tried = _collect_overall(source, items, today)
     if len(failed_categories) == len(CATEGORIES):
         reasons = "; ".join(f"부류 {code}: {reason}" for code, reason in failed_categories.items())
         raise CollectError(f"전체 평균을 한 부류도 받지 못했습니다({reasons}).")
-    priced = [row for row in overall.values() if row.today is not None]
+    wanted = {(item.item_code, item.kind_code) for item in items}
+    priced = [row for key, row in overall.items() if row.today is not None and key in wanted]
     if not priced:
         hint = " 샘플이면 먼저 `uv run python -m collector.make_sample`을 돌리세요." \
             if source.name == SAMPLE_NAME else ""
         raise CollectError(f"최근 {LOOKBACK_DAYS}일 동안 전체 평균 응답에 값이 없어 기준일을 정할 수 없습니다." + hint
+                           + " 응답에 값이 있는데도(\"값\" 뒤 숫자가 0보다 큼) 이렇다면 품종 코드가 품종 목록 파일과"
+                           " 맞지 않을 수 있습니다(`uv run python -m collector.make_items`)."
                            + " 날마다 받은 응답(부류:코드): " + " / ".join(tried))
     as_of = max(row.as_of for row in priced)
     if should_skip(existing, as_of, source.name):

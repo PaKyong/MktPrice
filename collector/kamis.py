@@ -200,17 +200,21 @@ def describe_response(raw: Any) -> str:
     return f"모양 모름({type(data).__name__})"
 
 
-def latest_overall(source: Source, today: date) -> Tuple[List[OverallRow], Dict[str, str], List[str]]:
+def latest_overall(source: Source, today: date,
+                   useful: Callable[[OverallRow], bool]) -> Tuple[List[OverallRow], Dict[str, str], List[str]]:
     """전체 평균 값이 있는 가장 최근 날의 줄을 받는다.
 
     오늘부터 하루씩 거꾸로 최대 `LOOKBACK_DAYS`일 동안, 날마다 부류 6개를 부르고
-    응답을 해석한다. 어느 줄에든 당일 값이 있으면 그날에서 멈춘다(값이 "-"뿐인
-    줄은 값이 없는 것으로 본다). 모든 부류가 실패한 날은 더 거슬러 가지 않는다.
+    응답을 해석한다. 쓰는 줄(useful) 가운데 당일 값이 있는 줄이 있으면 그날에서
+    멈춘다(값이 "-"뿐인 줄은 값이 없는 것으로 본다). 쓰지 않는 줄은 보지 않는다.
+    농수산물 값이 아직 안 올라온 오전에도 축산물 줄에는 값이 있기 때문이다(2026-11-03
+    실제 응답). 모든 부류가 실패한 날은 더 거슬러 가지 않는다.
     날마다 부류별 응답 모양을 한 줄씩 남긴다(예: "2026-11-03 100:001 200:000 53줄 값43 ...").
 
     Args:
         source: KAMIS 또는 샘플 받기 쪽.
         today: 오늘 날짜(한국 시각). 날짜 글자의 연도를 정하는 데도 쓴다.
+        useful: 값이 있는지 볼 줄을 고르는 함수(예: 상품 등급이고 품종 목록에 있는 줄).
 
     Returns:
         (그날의 모든 등급 줄, 실패한 부류 코드 → 이유, 날마다의 응답 모양).
@@ -235,7 +239,7 @@ def latest_overall(source: Source, today: date) -> Tuple[List[OverallRow], Dict[
         tried.append(f"{day.isoformat()} " + " ".join(notes))
         if len(failed) == len(CATEGORIES):
             return [], failed, tried
-        if any(row.today is not None for row in rows):
+        if any(useful(row) and row.today is not None for row in rows):
             return rows, failed, tried
     return [], failed, tried
 

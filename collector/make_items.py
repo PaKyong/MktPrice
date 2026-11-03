@@ -11,7 +11,7 @@ import sys
 from datetime import date
 from typing import List, Optional
 
-from collector.items import ITEMS_PATH, build_items, save_items
+from collector.items import ITEMS_PATH, TOP_RANK, build_items, save_items
 from collector.kamis import SAMPLE_DIR, latest_overall, make_source
 
 # KAMIS 코드표 "등급코드" 시트의 상품 등급 코드(p_productrankcode).
@@ -30,7 +30,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         종료 코드. 성공하면 0, 받지 못한 부류가 있거나 7일 동안 값이 없으면 1.
     """
     source = make_source(os.environ, SAMPLE_DIR)
-    rows, failed, tried = latest_overall(source, date.today())
+    rows, failed, tried = latest_overall(source, date.today(), lambda row: row.rank == TOP_RANK)
     if failed or not rows:
         # 값을 못 찾았는데 그대로 쓰면 품종 목록 파일이 비거나 부류가 빠진다.
         print(f"전체 평균을 받지 못해 품종 목록 파일을 그대로 둡니다. 받지 못한 부류: {failed}. "
