@@ -140,8 +140,9 @@ class ChampriceSource:
     def rows(self, month: Month) -> Iterator[Dict[str, Any]]:
         """그 달의 줄을 1쪽부터 차례로 받아 하나씩 내준다.
 
-        받은 줄 수가 응답의 `totalCount`에 이르거나 빈 쪽이 오면 멈춘다. 서버가
-        `PER_PAGE`보다 적게 줘도 쪽을 더 받아 끝까지 받는다.
+        받은 줄 수가 응답의 `totalCount`에 이르면 멈춘다. 서버가 `PER_PAGE`보다 적게
+        줘도 쪽을 더 받아 끝까지 받는다. 다 받기 전에 빈 쪽이 오면 실패로 다룬다. 덜 받은
+        채로 끝내면 정가인 날이 빠져 행사 값이 평소 값으로 보이기 때문이다.
 
         Args:
             month: 받을 달.
@@ -150,16 +151,24 @@ class ChampriceSource:
             응답 `data`의 줄(칸 이름은 상품명, 조사일, 판매가격, 판매업소 등).
 
         Raises:
-            ChampriceError: 한 쪽이라도 끝내 받지 못한 경우.
+            ChampriceError: 한 쪽이라도 끝내 받지 못했거나, 응답에 `totalCount`가 없거나,
+                다 받기 전에 빈 쪽이 온 경우.
         """
         got = 0
         page = 1
         while True:
+            what = f"{month.as_of} {page}쪽"
             query = urllib.parse.urlencode({"page": page, "perPage": PER_PAGE, "returnType": "JSON"})
-            raw = self._get(f"{API_BASE}{month.path}?{query}", f"{month.as_of} {page}쪽", with_key=True)
+            raw = self._get(f"{API_BASE}{month.path}?{query}", what, with_key=True)
+            total = raw.get("totalCount")
+            if not isinstance(total, int):
+                raise ChampriceError(f"참가격 응답에 전체 줄 수(totalCount)가 없습니다: {what}")
             data = raw.get("data") or []
             yield from data
             got += len(data)
-            if not data or got >= int(raw.get("totalCount") or 0):
+            if got >= total:
                 return
+            if not data:
+                raise ChampriceError(f"참가격 {month.as_of}: 전체 {total}줄 가운데 {got}줄만 받고 빈 쪽이 "
+                                     "왔습니다. 한 번에 주는 줄 수의 상한을 확인하세요.")
             page += 1

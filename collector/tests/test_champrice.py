@@ -100,11 +100,20 @@ def test_rows_pages_until_total_even_if_server_gives_fewer() -> None:
     assert len(opener.urls) == 3
 
 
-def test_rows_stops_on_empty_page() -> None:
+def test_rows_fails_when_pages_run_out_before_total() -> None:
+    # 줄을 덜 받은 채로 끝나면 정가인 날이 빠져 행사 값이 평소 값으로 보이므로, 조용히 멈추지 않고 실패한다.
     opener = FakeOpener([page(10, [row("가"), row("나")]), page(10, [])])
     src = ChampriceSource("SECRETKEY", opener=opener, sleep=no_sleep)
-    assert [r["상품명"] for r in src.rows(MONTH)] == ["가", "나"]
+    with pytest.raises(ChampriceError, match="10줄 가운데 2줄"):
+        list(src.rows(MONTH))
     assert len(opener.urls) == 2
+
+
+def test_rows_fails_without_total_count() -> None:
+    body = json.dumps({"page": 1, "perPage": 10000, "data": [row("가")]}, ensure_ascii=False).encode("utf-8")
+    src = ChampriceSource("SECRETKEY", opener=FakeOpener([body]), sleep=no_sleep)
+    with pytest.raises(ChampriceError, match="totalCount"):
+        list(src.rows(MONTH))
 
 
 def test_retries_then_gives_up_without_leaking_key() -> None:
