@@ -211,13 +211,51 @@ function jumpTo(category) {
 
 // ---- 검색 ----
 
+// 영어 대소문자와 띄어쓰기를 가리지 않게 맞춘다("cj" → CJ, "고향 만두" → 고향만두).
+const norm = (s) => s.toLowerCase().replace(/\s+/g, "");
+// 검색어마다 더 찾을 낱말. 이름에 없는 말로 찾기 쉬운 것만 둔다(예: "계란"인데 상품명은 "유정란").
+const MORE_WORDS = {
+  계란: ["유정란", "달걀"],
+  달걀: ["계란", "유정란"],
+  라면: ["너구리", "탕면", "왕뚜껑", "큰사발"],
+  소고기: ["쇠고기"],
+  쇠고기: ["소고기"],
+  생수: ["삼다수", "아이시스"],
+  물: ["삼다수", "아이시스"],
+  휴지: ["화장지", "3겹"],
+  맥주: ["카스", "하이트", "에일"],
+  소주: ["참이슬", "처음처럼"],
+  커피: ["맥심", "카누", "맥스웰", "네스프레소", "돌체구스토", "라떼", "콜드브루"],
+  아이스크림: ["메로나", "월드콘", "부라보콘", "투게더", "싸만코", "돼지바", "바밤바"],
+  치약: ["2080", "페리오토탈7오리지널"],
+  생리대: ["쏘피", "좋은느낌", "화이트수퍼"],
+};
+// 한글 낱자의 초성("신" → "ㅅ"). 한글 낱자가 아니면 그대로 둔다.
+const CHOSEONG = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+const initials = (s) => [...s].map((ch) => {
+  const code = ch.charCodeAt(0) - 0xac00;
+  return code >= 0 && code < 11172 ? CHOSEONG[Math.floor(code / 588)] : ch;
+}).join("");
+
+// 검색어로 이름을 고르는 함수를 만든다. 초성만 쳤으면 이름의 초성으로("ㅅㄹㅁ" → 신라면) 찾는다.
+function matcher(query) {
+  const q = norm(query);
+  if (/^[ㄱ-ㅎ]+$/.test(q)) return (name) => initials(norm(name)).includes(q);
+  const words = [q, ...(MORE_WORDS[q] ?? [])];
+  return (name) => {
+    const n = norm(name);
+    return words.some((w) => n.includes(w));
+  };
+}
+
 function renderSearch() {
   const view = $("view");
   view.replaceChildren();
   const q = state.query;
+  const match = matcher(q);
   // KAMIS 품종 뒤에 이마트 상품(전체 품목과 같은 순서).
-  const found = [...browseOrder().filter((e) => e.item.includes(q) || e.kind.includes(q)),
-                 ...state.emartItems.filter((e) => e.name.includes(q))];
+  const found = [...browseOrder().filter((e) => match(e.item) || match(e.kind)),
+                 ...state.emartItems.filter((e) => match(e.name))];
   if (!found.length) {
     view.append(h("p", { class: "found" }, `"${q}"에 맞는 품목이 없어요. 다른 이름으로 찾아 보세요.`));
     return;
