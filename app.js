@@ -196,6 +196,7 @@ function trendChart(trend) {
 const info = (label, value) => h("li", { class: "info__row" }, h("span", {}, label), h("span", {}, value));
 
 // 상세 위 막대의 ☆/★. 누르면 즐겨찾기에 넣거나 뺀다.
+// 본문은 다시 그리지 않는다. 철 지난 품종은 즐겨찾기에서 빼면 이름을 알 곳이 없어 제목이 코드로 바뀌기 때문이다.
 function renderStar(id, name, on) {
   const star = $("star");
   star.textContent = on ? "★" : "☆";
@@ -204,7 +205,8 @@ function renderStar(id, name, on) {
   star.onclick = async () => {
     if (on) await removeFavorite(id);
     else await addFavorite(id, name);
-    await refresh();
+    state.favorites = await getFavorites();
+    renderStar(id, name, !on);
   };
 }
 
@@ -249,10 +251,11 @@ function renderDetail(id) {
 }
 
 // ←: 앱 안에서 들어왔으면 브라우저 뒤로 가기(검색어와 보던 자리가 그대로 남는다).
-// 상세 주소로 바로 열었으면 뒤로 가면 앱 밖으로 나가므로 첫 화면으로 간다.
+// 상세 주소로 바로 열었으면 뒤로 가면 앱 밖으로 나가므로 첫 화면으로 간다. 이때 상세 기록을
+// 첫 화면으로 바꿔치기해, 폰의 뒤로 가기로 상세에 다시 들어와 ←가 앱 밖으로 나가는 일을 막는다.
 function goBack() {
   if (state.cameFromApp) history.back();
-  else location.hash = "#/";
+  else location.replace("#/");
 }
 
 // ---- 화면 고르기 ----
@@ -328,9 +331,11 @@ async function init() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
+  // 검색 결과나 첫 화면은 맨 위부터 보인다. 목록을 내린 채로 치면 결과 앞쪽이 위 막대 뒤에 가려지기 때문이다.
   $("search").addEventListener("input", (ev) => {
     state.query = ev.target.value.trim();
     render();
+    window.scrollTo(0, 0);
   });
   $("search-form").addEventListener("submit", (ev) => {
     ev.preventDefault();
@@ -342,6 +347,7 @@ async function init() {
     $("search").value = "";
     $("search").blur();
     render();
+    window.scrollTo(0, 0);
   });
   // 목록을 손가락으로 내리기 시작하면 자판을 닫아 화면을 넓힌다.
   window.addEventListener("touchmove", () => {
