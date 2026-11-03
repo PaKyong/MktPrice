@@ -13,8 +13,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 샘플 응답 만들기: `uv run python -m collector.make_sample` — `collector/sample/`(14MB, git에 넣지 않음)에 만든다. 키 없이 수집하기 전에 한 번 돌린다.
 - 수집: `uv run python -m collector` — 키(환경변수 `KAMIS_CERT_KEY`, `KAMIS_CERT_ID`)가 있으면 KAMIS, 없으면 샘플로 `data/prices.json`을 만든다. 기준일과 출처가 기존 파일과 같으면 건너뛴다. 실제 데이터가 든 파일은 샘플로 덮어쓰지 않는다.
 - 시험: `uv run pytest` (인터넷 없이 돈다). 하나만: `uv run pytest collector/tests/test_compute.py::test_signal_boundaries`
-- 품종 목록 다시 만들기: `uv run python -m collector.make_items` — 키를 받은 뒤 실제 품종과 조사 단위로 `collector/items.json`을 바꿀 때 쓴다.
+- 품종 목록 다시 만들기: `uv run python -m collector.make_items` — 키를 받은 뒤 실제 품종과 조사 단위로 `collector/items.json`을 바꿀 때 쓴다. 바꾼 뒤에는 글꼴도 다시 만든다(아래).
 - 화면 확인: `uv run python -m http.server 8000`(앱 안 브라우저는 `.claude/launch.json`의 "web") 뒤 `http://localhost:8000`을 휴대폰 크기(375×812)로 연다. 화면은 자동 시험이 없으므로(설계 11절) 검색 → 담기 → 개수 → 총액 → 상세 → 빼기를 직접 해 본다.
+- 영수증 글꼴 만들기: `uv run python tools/make_font.py` — 원본 나눔고딕코딩(`tools/fonts-src/`, git에 넣지 않음)에서 앱이 쓰는 글자만 남긴 `fonts/receipt-*.woff2`를 만든다. 품종 목록 파일이나 화면 문구(`index.html`, `app.js`)를 바꾸면 다시 돌린다. 원본이 없으면 명령이 받을 주소를 알려 준다.
 - 화면 파일(HTML·CSS·JS·아이콘)을 고치면 `sw.js` 맨 위 `CACHE`의 숫자를 올린다(예: `mp-v1` → `mp-v2`). 안 올리면 폰에 저장된 옛 화면이 계속 열린다. 아이콘은 `uv run python tools/make_icons.py`로 다시 만든다.
 
 ## 예약 실행과 배포 (`.github/workflows/collect.yml`)
