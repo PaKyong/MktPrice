@@ -10,10 +10,11 @@ import pytest
 from collector import emart
 from collector.champrice import ChampriceError, Month
 from collector.emart import (KST, ShopRow, build_emart, build_products, is_emart, parse_rows,
-                             representative, run)
+                             representative, run, with_groups)
 
 NOW = datetime(2026, 11, 13, 19, 5, 12, tzinfo=KST)
 M7, M8, M9 = Month("/m7", date(2026, 7, 24)), Month("/m8", date(2026, 8, 28)), Month("/m9", date(2026, 9, 25))
+GROUPS = {"라면·면": ["신라면(5개입)"], "냉동·즉석·가공": ["고향만두(900g)"], "생활용품": ["크린랩(30cm x 50m)"]}
 
 
 def raw(name: str, day: str, price: Any, store: str = "이마트강릉점") -> Dict[str, Any]:
@@ -117,17 +118,18 @@ def test_run_writes_latest_three_months(tmp_path: Path) -> None:
     m6 = Month("/m6", date(2026, 6, 26))
     src = FakeSource([m6, M7, M8, M9], {"/m9": [raw("신라면(5개입)", "2026-09-25", 4150)]})
     out = tmp_path / "emart.json"
-    assert run(src, out, NOW) == "updated"
+    assert run(src, out, NOW, GROUPS) == "updated"
     assert src.asked == [M7, M8, M9]
     assert json.loads(out.read_text(encoding="utf-8"))["months"] == ["2026-07-24", "2026-08-28", "2026-09-25"]
 
 
 def test_run_skips_when_newest_month_already_in_file(tmp_path: Path) -> None:
     out = tmp_path / "emart.json"
-    out.write_text(json.dumps({"months": ["2026-07-24", "2026-08-28", "2026-09-25"], "items": []}), encoding="utf-8")
+    out.write_text(json.dumps({"months": ["2026-07-24", "2026-08-28", "2026-09-25"], "groups": ["라면·면"],
+                               "items": [{"name": "신라면(5개입)", "group": "라면·면"}]}), encoding="utf-8")
     before = out.read_text(encoding="utf-8")
     src = FakeSource([M7, M8, M9], {})
-    assert run(src, out, NOW) == "skipped"
+    assert run(src, out, NOW, GROUPS) == "skipped"
     assert src.asked == []
     assert out.read_text(encoding="utf-8") == before
 
@@ -141,8 +143,56 @@ def test_run_keeps_file_on_failure(tmp_path: Path, src: FakeSource) -> None:
     out.write_text(json.dumps({"months": ["2026-07-24"], "items": []}), encoding="utf-8")
     before = out.read_text(encoding="utf-8")
     with pytest.raises(ChampriceError):
-        run(src, out, NOW)
+        run(src, out, NOW, GROUPS)
     assert out.read_text(encoding="utf-8") == before
+
+
+def test_with_groups_puts_unlisted_items_in_other() -> None:
+    data = {"as_of": "2026-09-25", "items": [{"name": "고향만두(900g)"}, {"name": "새 상품(1개)"},
+                                             {"name": "신라면(5개입)"}]}
+    out = with_groups(data, GROUPS)
+    assert [e["group"] for e in out["items"]] == ["냉동·즉석·가공", "기타", "라면·면"]
+    assert "group" not in data["items"][0] and "groups" not in data
+
+
+def test_with_groups_orders_like_file_then_other() -> None:
+    items = [{"name": "새 상품(1개)"}, {"name": "신라면(5개입)"}, {"name": "고향만두(900g)"}]
+    assert with_groups({"items": items}, GROUPS)["groups"] == ["라면·면", "냉동·즉석·가공", "기타"]
+    assert with_groups({"items": items[1:]}, GROUPS)["groups"] == ["라면·면", "냉동·즉석·가공"]
+
+
+def test_run_new_month_writes_groups_and_reports_other(tmp_path: Path,
+                                                       capsys: pytest.CaptureFixture[str]) -> None:
+    src = FakeSource([M9], {"/m9": [raw("신라면(5개입)", "2026-09-25", 4150), raw("새 상품(1개)", "2026-09-25", 990)]})
+    out = tmp_path / "emart.json"
+    assert run(src, out, NOW, GROUPS) == "updated"
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["groups"] == ["라면·면", "기타"]
+    assert [(e["name"], e["group"]) for e in data["items"]] == [("새 상품(1개)", "기타"), ("신라면(5개입)", "라면·면")]
+    assert "묶음 없는 상품 1개" in capsys.readouterr().out
+
+
+def test_run_regroups_file_without_fetching_rows(tmp_path: Path) -> None:
+    out = tmp_path / "emart.json"
+    old = {"source": "참가격", "generated_at": "2026-10-02T19:05:00+09:00", "months": ["2026-08-28", "2026-09-25"],
+           "as_of": "2026-09-25", "items": [{"name": "신라면(5개입)", "usual": 4150}]}
+    out.write_text(json.dumps(old), encoding="utf-8")
+    src = FakeSource([M8, M9], {})
+    assert run(src, out, NOW, GROUPS) == "regrouped"
+    assert src.asked == []
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["items"] == [{"name": "신라면(5개입)", "usual": 4150, "group": "라면·면"}]
+    assert data["groups"] == ["라면·면"]
+    # 화면이 바뀐 파일을 알아보도록 만든 시각을 새로 적는다.
+    assert data["generated_at"] == "2026-11-13T19:05:12+09:00"
+
+
+def test_groups_file_lists_agreed_groups_and_each_product_once() -> None:
+    groups = json.loads(emart.GROUPS_PATH.read_text(encoding="utf-8"))
+    assert list(groups) == ["고기·달걀·생선", "채소·쌀·두부", "라면·면", "냉동·즉석·가공", "우유·유제품", "과자·빵·빙과",
+                            "음료·커피·술", "양념·기름·가루", "생활용품", "씻기·화장품", "아기·반려동물"]
+    names = [name for names in groups.values() for name in names]
+    assert len(names) == len(set(names))
 
 
 def test_main_without_key_skips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,

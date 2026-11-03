@@ -3,10 +3,12 @@
     uv run python -m collector.emart    # 새 달이 있을 때만 최근 3개 달을 받는다
 
 키(환경변수 DATA_GO_KR_KEY, 공공데이터포털 인증키)가 없으면 아무것도 하지 않고 끝낸다.
+새 달이 없으면 참가격은 다시 받지 않고, 묶음 목록 파일(`emart_groups.json`)만 다시 붙여 본다.
 참가격 이마트 값에는 행사 값이 표시 없이 섞여 있어, 조사일마다 지점들에서 가장
 흔한 값을 대표값으로 삼고 3개월 대표값 가운데 가장 높은 값을 평소 값으로 본다.
 """
 
+import json
 import os
 import re
 import sys
@@ -22,6 +24,10 @@ from collector.champrice import ChampriceError, ChampriceSource, Month, MonthSou
 from collector.output import load_prices, write_prices
 
 EMART_PATH = Path(__file__).parent.parent / "data" / "emart.json"
+# 묶음 이름 → 상품명 목록. 손으로 고친다. 적은 순서가 화면 칸 순서다.
+GROUPS_PATH = Path(__file__).parent / "emart_groups.json"
+# 목록에 없는 상품(새로 조사하기 시작한 상품 등)의 묶음. 맨 끝 칸이다.
+OTHER_GROUP = "기타"
 SOURCE_NAME = "참가격"
 # 가장 새 달과 그 앞 두 달(조사 6번쯤).
 MONTHS = 3
@@ -171,21 +177,43 @@ def build_emart(raw: Iterable[Mapping[str, Any]], months: List[Month], now: date
     }
 
 
-def run(source: MonthSource, out_path: Path, now: datetime) -> str:
+def with_groups(data: Dict[str, Any], groups: Dict[str, List[str]]) -> Dict[str, Any]:
+    """상품마다 묶음을 붙이고 화면 칸 순서를 적은 새 파일 내용을 만든다.
+
+    목록에 없는 상품은 "기타"로 넣는다. 칸 순서는 목록 파일에 적은 순서에서 상품이
+    있는 묶음만 고르고, "기타"는 맨 끝이다. 받은 `data`는 바꾸지 않는다.
+
+    Args:
+        data: 파일 내용(`items`에 상품명 `name`이 있다).
+        groups: 묶음 이름 → 상품명 목록.
+
+    Returns:
+        상품마다 `group`이, 파일 전체에 `groups`(칸 순서)가 붙은 파일 내용.
+    """
+    group_of = {name: group for group, names in groups.items() for name in names}
+    items = [{**item, "group": group_of.get(item["name"], OTHER_GROUP)} for item in data["items"]]
+    used = {item["group"] for item in items}
+    return {**data, "groups": [g for g in [*groups, OTHER_GROUP] if g in used], "items": items}
+
+
+def run(source: MonthSource, out_path: Path, now: datetime, groups: Dict[str, List[str]]) -> str:
     """새 달이 있으면 최근 3개 달을 받아 화면용 파일을 새로 쓴다.
 
     1. 설명서의 달 목록에서 뒤의 `MONTHS`개를 고른다.
-    2. 기존 파일의 달 목록에 가장 새 달이 이미 있으면 건너뛴다.
-    3. 고른 달들의 줄을 이어 받아 계산하고, 파일을 통째로 바꿔 넣는다.
-    받다가 실패하거나 이마트 줄이 없으면 기존 파일은 그대로 둔다.
+    2. 기존 파일의 달 목록에 가장 새 달이 이미 있으면 참가격은 받지 않고, 기존 파일에
+       묶음만 다시 붙여 본다. 달라졌으면(묶음 목록을 고쳤으면) 만든 시각을 새로 적어 쓴다.
+    3. 새 달이 있으면 고른 달들의 줄을 이어 받아 계산하고 묶음을 붙여 파일을 통째로 바꿔 넣는다.
+    받다가 실패하거나 이마트 줄이 없으면 기존 파일은 그대로 둔다. 어느 쪽이든 "기타"에 든
+    상품이 있으면 이름을 남긴다(목록에 더할 상품).
 
     Args:
         source: 참가격 받기 쪽.
         out_path: 화면용 파일 경로.
         now: 만든 시각(한국 시각).
+        groups: 묶음 이름 → 상품명 목록.
 
     Returns:
-        "updated" 또는 "skipped".
+        "updated"(새 달), "regrouped"(묶음만 다시 붙임) 또는 "skipped".
 
     Raises:
         ChampriceError: 달 목록이 없거나, 받기가 실패했거나, 이마트 줄이 없는 경우.
@@ -195,14 +223,23 @@ def run(source: MonthSource, out_path: Path, now: datetime) -> str:
         raise ChampriceError("설명서에 달 목록이 없습니다.")
     existing = load_prices(out_path)
     if existing is not None and months[-1].as_of.isoformat() in existing.get("months", []):
-        return "skipped"
-    data = build_emart(chain.from_iterable(source.rows(m) for m in months), months, now)
-    write_prices(out_path, data)
-    # 조사일별 지점 수를 모두 더하면 받은 이마트 줄 수다.
-    shop_rows = sum(stores for item in data["items"] for _, _, stores in item["history"])
-    print(f"{SOURCE_NAME} {data['as_of']}: 이마트 상품 {len(data['items'])}개, 이마트 줄 {shop_rows}개, "
-          f"달 {', '.join(data['months'])}")
-    return "updated"
+        data = with_groups(existing, groups)
+        result = "skipped" if data == existing else "regrouped"
+        if result == "regrouped":
+            data["generated_at"] = now.isoformat(timespec="seconds")
+            write_prices(out_path, data)
+    else:
+        data = with_groups(build_emart(chain.from_iterable(source.rows(m) for m in months), months, now), groups)
+        write_prices(out_path, data)
+        # 조사일별 지점 수를 모두 더하면 받은 이마트 줄 수다.
+        shop_rows = sum(stores for item in data["items"] for _, _, stores in item["history"])
+        print(f"{SOURCE_NAME} {data['as_of']}: 이마트 상품 {len(data['items'])}개, 이마트 줄 {shop_rows}개, "
+              f"달 {', '.join(data['months'])}")
+        result = "updated"
+    others = [item["name"] for item in data["items"] if item["group"] == OTHER_GROUP]
+    if others:
+        print(f"묶음 없는 상품 {len(others)}개(기타 칸에 넣음, {GROUPS_PATH.name}에 더할 것): {', '.join(others)}")
+    return result
 
 
 def main() -> int:
@@ -216,12 +253,15 @@ def main() -> int:
         print("참가격 키 없음: 이마트 값을 건너뜁니다")
         return 0
     try:
-        result = run(ChampriceSource(key), EMART_PATH, datetime.now(KST))
+        groups = json.loads(GROUPS_PATH.read_text(encoding="utf-8"))
+        result = run(ChampriceSource(key), EMART_PATH, datetime.now(KST), groups)
     except ChampriceError as err:
         print(f"참가격 수집 실패: {err}", file=sys.stderr)
         return 1
     if result == "skipped":
         print("참가격: 새 달이 없어 건너뜁니다")
+    elif result == "regrouped":
+        print(f"참가격: 새 달이 없어 {EMART_PATH}에 묶음만 다시 붙였습니다")
     else:
         print(f"참가격: {EMART_PATH}를 새로 썼습니다")
     return 0
