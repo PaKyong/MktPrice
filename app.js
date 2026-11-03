@@ -350,7 +350,13 @@ async function fetchJson(path) {
   }
 }
 
-const fetchBoth = () => Promise.all([fetchJson("data/prices.json"), fetchJson("data/emart.json")]);
+// 이마트 파일은 폰에 저장본이 없을 때(키를 넣기 전, 화면을 고친 뒤 처음 연 날) 서비스 워커의 3초 제한이
+// 걸리지 않는다. 신호가 약한 매장에서 첫 화면이 이 파일을 기다리며 비지 않게 따로 자른다.
+// 서비스 워커의 3초보다 길게 잡아, 저장본이 있으면 그것을 받는다. 늦게 온 답은 서비스 워커가 저장해 다음에 쓴다.
+const EMART_WAIT_MS = 4000;
+const fetchEmart = () => Promise.race([fetchJson("data/emart.json"),
+                                       new Promise((resolve) => setTimeout(() => resolve(null), EMART_WAIT_MS))]);
+const fetchBoth = () => Promise.all([fetchJson("data/prices.json"), fetchEmart()]);
 
 // 이마트 상품은 id를 붙여 KAMIS 품종과 같은 지도에 넣는다(즐겨찾기와 상세 주소가 같은 길을 쓴다).
 function setData(data, emart) {
