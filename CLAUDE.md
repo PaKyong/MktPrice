@@ -21,6 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 예약 실행과 배포 (`.github/workflows/collect.yml`)
 - 평일 한국 19시(UTC 10시)와 Actions 탭의 "Run workflow"(지금 실행)로 돈다. Secrets에 `KAMIS_CERT_KEY`, `KAMIS_CERT_ID`가 없으면 "키 없음"을 남기고 수집을 건너뛴 뒤 배포만 한다. 키가 있으면 수집하고 `data/prices.json`이 바뀌었을 때만 `github-actions[bot]`이 `chore(data): <기준일> 가격 갱신`으로 커밋·푸시한다.
 - 배포도 같은 워크플로가 한다(Actions 기본 토큰으로 푸시한 커밋은 다른 워크플로를 깨우지 않아서). 사람이 `main`에 푸시하면 수집 없이 배포만 돈다. 배포에는 화면 파일과 `data/`만 들어간다. 저장소 설정에서 Pages 출처가 "GitHub Actions"여야 한다.
+- 품종 목록 다시 만들기: Actions의 "Run workflow" 창에서 "품종 목록도 다시 만들기"를 켜고 돌리면, Secrets의 키로 `collector.make_items`를 돌린 뒤 `--force`로 수집해 `collector/items.json`과 `data/prices.json`을 함께 커밋한다(`…, 품종 목록 다시 만듦`). 그 뒤 받아 와서 `tools/make_font.py`로 글꼴을 다시 만들고 `sw.js`의 `CACHE`를 올린다(글꼴 원본은 내 컴퓨터에만 있다).
 - Actions가 평일마다 `data/prices.json`을 커밋하므로, 푸시 전에 먼저 받아온다(`git pull --rebase`). `data/prices.json`은 손으로 고치지 않는다.
 
 ## 프로젝트 목적 (2026-11-02 정함)
