@@ -90,13 +90,18 @@ function sparkline(trend) {
   return svg;
 }
 
+// 즐겨찾기에 든 품목 이름 뒤에 붙이는 노란 ★.
+const favMark = (e) => (state.favorites.some((f) => f.id === e.id)
+  ? h("span", { class: "fav-mark", role: "img", "aria-label": "즐겨찾기" }, "★") : null);
+
 // 즐겨찾기·전체 품목·검색 결과의 한 줄: 왼쪽 이름과 단위, 가운데 30일 그래프, 오른쪽 단위 가격과 평년 대비 %.
-function rowNode(e) {
+// markFav: 전체 품목과 검색 결과에서 즐겨찾기에 든 품목이면 이름 뒤에 ★를 붙인다(즐겨찾기 칸 안은 모두 즐겨찾기라 뺀다).
+function rowNode(e, markFav) {
   const pct = pctText(e.change.normal);
   const tag = e.signal === "싼 편" ? "down" : e.signal === "비싼 편" ? "up" : null;
   return h("li", {},
     h("a", { class: "row", href: itemHref(e.id) },
-      h("span", { class: "row__name" }, displayName(e),
+      h("span", { class: "row__name" }, displayName(e), markFav ? favMark(e) : null,
         h("span", { class: "row__sub" }, perUnit(e),
           tag ? [" · ", h("span", { class: tag }, e.signal)] : null,
           // 일부 품종만 받지 못한 날은 그 품종이 옛 값이다.
@@ -110,10 +115,10 @@ const emartTag = () => h("span", { class: "tag" }, "이마트");
 
 // 이마트 상품의 한 줄: 왼쪽 상품명과 "평소 값", 오른쪽 평소 값과 행사 때 최저 값. 그래프 칸은 없다(조사가 6번뿐).
 // showTag: 검색 결과와 즐겨찾기처럼 KAMIS 품종과 섞이는 곳에서 "이마트" 표시를 붙인다.
-function emartRowNode(e, showTag) {
+function emartRowNode(e, showTag, markFav) {
   return h("li", {},
     h("a", { class: "row row--emart", href: itemHref(e.id) },
-      h("span", { class: "row__name" }, e.name,
+      h("span", { class: "row__name" }, e.name, markFav ? favMark(e) : null,
         h("span", { class: "row__sub" }, showTag ? emartTag() : null,
           e.low ? "평소 값" : "평소 값 · 행사 없음",
           // 마지막 조사일에 값이 없던 상품은 그 전 값이다.
@@ -124,7 +129,7 @@ function emartRowNode(e, showTag) {
           : h("span", { class: "row__pct muted" }, "-"))));
 }
 
-const itemRow = (e, showTag) => (e.emart ? emartRowNode(e, showTag) : rowNode(e));
+const itemRow = (e, showTag, markFav) => (e.emart ? emartRowNode(e, showTag, markFav) : rowNode(e, markFav));
 
 // 즐겨찾기에 있지만 가격 파일에서 빠진 품종(철이 지남)이나 이마트 상품(조사가 끊김).
 function missingRowNode(fav) {
@@ -152,7 +157,7 @@ function renderHome() {
   const chipsLeft = view.querySelector(".chips")?.scrollLeft ?? 0;
   view.replaceChildren();
   const favRows = state.favorites.map((f) =>
-    (state.byId.has(f.id) ? itemRow(state.byId.get(f.id), true) : missingRowNode(f)));
+    (state.byId.has(f.id) ? itemRow(state.byId.get(f.id), true, false) : missingRowNode(f)));
   view.append(h("section", { class: "section" },
     h("h2", { class: "sec" }, "즐겨찾기"),
     favRows.length
@@ -176,7 +181,7 @@ function renderHome() {
       h("button", { type: "button", class: c === state.chip ? "chip chip--on" : "chip", "data-category": c,
                     onclick: () => jumpTo(c) }, `${c} ${list.length}`))),
     [...byCategory].map(([c, list]) => h("section", { class: "cat-block", id: `cat-${c}` },
-      h("h3", { class: "cat" }, c), h("ul", { class: "rows" }, list.map((e) => itemRow(e, false)))))));
+      h("h3", { class: "cat" }, c), h("ul", { class: "rows" }, list.map((e) => itemRow(e, false, true)))))));
   view.querySelector(".chips").scrollLeft = chipsLeft;
 }
 
@@ -207,7 +212,7 @@ function renderSearch() {
     return;
   }
   view.append(h("p", { class: "found" }, `"${q}" 찾은 품종 ${found.length}개`),
-    h("ul", { class: "rows" }, found.map((e) => itemRow(e, true))));
+    h("ul", { class: "rows" }, found.map((e) => itemRow(e, true, true))));
 }
 
 // ---- 상세 ----

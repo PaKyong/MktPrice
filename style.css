@@ -10,6 +10,7 @@
   --down: #e0343a;
   --up: #2f6fd8;
   --band: #ffe45c;
+  --star: #f2a900;
   /* 맨 위 막대 높이. 부류 칸 줄이 그 바로 아래에 붙는다 */
   --bar-h: calc(60px + env(safe-area-inset-top, 0px));
   color-scheme: light;
@@ -24,6 +25,7 @@
     --line: #2a2e33;
     --down: #ff5a5f;
     --up: #5b9bff;
+    --star: #ffcc33;
     color-scheme: dark;
   }
 }
@@ -143,6 +145,7 @@ button, input { font: inherit; color: inherit; }
 .row:active { opacity: 0.6; }
 .row__name { font-size: 16px; line-height: 1.35; }
 .row__sub { display: block; margin-top: 1px; color: var(--muted); font-size: 13px; }
+.fav-mark { margin-left: 4px; color: var(--star); font-size: 14px; }
 .row__price { text-align: right; white-space: nowrap; font-weight: 700; }
 .row__pct { display: block; font-size: 13px; font-weight: 400; }
 /* 검색 결과·즐겨찾기에서 이마트 상품을 KAMIS 품종과 구별하는 작은 표시 */
