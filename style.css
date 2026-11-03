@@ -3,14 +3,16 @@
 :root {
   --bg: #ffffff;
   --text: #191f28;
-  --muted: #8b95a1;
+  /* 흐린 글씨: 흰 바탕 대비 5.0:1(밝은 매장 조명에서도 읽히게) */
+  --muted: #66707d;
   --soft: #f2f4f6;
   --line: #e5e8eb;
   /* 내리면(사는 사람에게 좋은 쪽) 빨강, 오르면 파랑 */
   --down: #e0343a;
   --up: #2f6fd8;
   --band: #ffe45c;
-  --star: #f2a900;
+  /* 즐겨찾기 ★: 흰 바탕 대비 3.2:1 */
+  --star: #c08600;
   /* 맨 위 막대 높이. 부류 칸 줄이 그 바로 아래에 붙는다 */
   --bar-h: calc(60px + env(safe-area-inset-top, 0px));
   color-scheme: light;
@@ -91,7 +93,7 @@ button, input { font: inherit; color: inherit; }
 .head { padding: 0 16px; }
 .head__asof { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
 .band { margin: 8px 0 0; padding: 6px 10px; border-radius: 8px; background: var(--soft); font-size: 13px; }
-.band--sample { background: var(--band); color: #191f28; font-weight: 700; }
+.band--sample, .band--warn { background: var(--band); color: #191f28; font-weight: 700; }
 
 .note {
   display: flex;

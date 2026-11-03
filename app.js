@@ -73,6 +73,18 @@ function svgEl(tag, attrs, text) {
 
 // ---- 기준일 줄 ----
 
+// 기준일 다음 날부터 오늘 전날까지의 평일 수(한국 날짜). 오늘 값은 저녁에 오므로 세지 않는다.
+function missedWeekdays(asOf) {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date());
+  const day = new Date(`${asOf}T00:00:00Z`);
+  const end = new Date(`${today}T00:00:00Z`);
+  let n = 0;
+  for (day.setUTCDate(day.getUTCDate() + 1); day < end; day.setUTCDate(day.getUTCDate() + 1)) {
+    if (day.getUTCDay() !== 0 && day.getUTCDay() !== 6) n += 1;
+  }
+  return n;
+}
+
 function renderTop() {
   const { data } = state;
   $("asof").textContent = `${data.as_of.replaceAll("-", ".")} 기준 · 출처 ${data.source}`
@@ -81,6 +93,10 @@ function renderTop() {
   const offline = $("print-offline");
   offline.hidden = navigator.onLine;
   offline.textContent = `인터넷 연결 없음 · ${md(data.as_of)} 값`;
+  // 평일 이틀 치 넘게 새 값이 없으면 예약 실행이 멈췄을 수 있다. 인터넷이 없을 때는 위 띠로 충분하다.
+  const stale = $("print-stale");
+  stale.hidden = !navigator.onLine || data.source === "샘플" || missedWeekdays(data.as_of) <= 2;
+  stale.textContent = `가격이 ${md(data.as_of)} 뒤로 안 바뀌었어요`;
 }
 
 // ---- 한 줄 ----
@@ -130,6 +146,8 @@ function emartRowNode(e, showTag, markFav) {
       h("span", { class: "row__name" }, e.name, markFav ? favMark(e) : null,
         h("span", { class: "row__sub" }, showTag ? emartTag() : null,
           e.low ? "평소 값" : "평소 값 · 행사 없음",
+          // 지점이 한두 곳뿐인 값은 덜 믿을 만해서 알린다.
+          e.stores <= 2 ? ` · 이마트 ${e.stores}곳` : null,
           // 마지막 조사일에 값이 없던 상품은 그 전 값이다.
           e.last_day !== state.emart.as_of ? ` · ${md(e.last_day)} 값` : null)),
       h("span", { class: "row__price" }, won(e.usual),
@@ -190,23 +208,50 @@ function renderHome() {
     h("nav", { class: "chips", "aria-label": "부류" }, [...byCategory].map(([c, list]) =>
       h("button", { type: "button", class: c === state.chip ? "chip chip--on" : "chip", "data-category": c,
                     onclick: () => jumpTo(c) }, `${c} ${list.length}`))),
-    [...byCategory].map(([c, list]) => h("section", { class: "cat-block", id: `cat-${c}` },
+    [...byCategory].map(([c, list]) => h("section", { class: "cat-block", id: `cat-${c}`, "data-category": c },
       h("h3", { class: "cat" }, c), h("ul", { class: "rows" }, list.map((e) => itemRow(e, false, true)))))));
   // 다시 그려도, 상세에 갔다 와도 옆으로 밀어 둔 부류 칸 줄 위치를 그대로 둔다(render가 지우기 전에 적어 둔다).
   view.querySelector(".chips").scrollLeft = state.chipsLeft;
 }
 
+// 위에 붙은 막대와 부류 칸 줄의 높이. 그 아래부터가 목록이 보이는 자리다.
+const coveredHeight = () => $("bar-home").offsetHeight + document.querySelector(".chips").offsetHeight;
+
+// 칸을 칠하고, 칸 줄에서 그 칸이 보이게 옆으로 민다. 칸 줄만 밀어 화면 전체가 옆으로 밀리지 않게 한다.
+function markChip(category) {
+  state.chip = category;
+  const chips = document.querySelector(".chips");
+  for (const chip of chips.children) {
+    const on = chip.dataset.category === category;
+    chip.classList.toggle("chip--on", on);
+    if (on && (chip.offsetLeft < chips.scrollLeft
+               || chip.offsetLeft + chip.offsetWidth > chips.scrollLeft + chips.clientWidth)) {
+      chips.scrollTo({ left: chip.offsetLeft - 16 });
+    }
+  }
+}
+
 // 부류 칸을 누르면 그 부류로 건너뛰고 칸을 칠한다. 위에 붙은 막대와 칸 줄에 가리지 않게 그만큼 덜 내린다.
 function jumpTo(category) {
-  state.chip = category;
   $("search").blur();
-  for (const chip of document.querySelectorAll(".chip")) {
-    chip.classList.toggle("chip--on", chip.dataset.category === category);
-    if (chip.dataset.category === category) chip.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }
+  markChip(category);
   const section = document.getElementById(`cat-${category}`);
-  const covered = $("bar-home").offsetHeight + document.querySelector(".chips").offsetHeight;
-  window.scrollTo(0, section.getBoundingClientRect().top + window.scrollY - covered);
+  window.scrollTo(0, section.getBoundingClientRect().top + window.scrollY - coveredHeight());
+}
+
+// 전체 품목을 내리는 대로 지금 맨 위에 보이는 부류의 칸을 칠한다. 화면을 한 번 그릴 때 한 번만 본다.
+let spyQueued = false;
+function spyChip() {
+  spyQueued = false;
+  const blocks = document.querySelectorAll(".cat-block");
+  if (!blocks.length || !document.querySelector(".chips")) return;
+  const line = coveredHeight() + 1;
+  let current = null;
+  for (const block of blocks) {
+    if (block.getBoundingClientRect().top > line) break;
+    current = block.dataset.category;
+  }
+  if (current !== state.chip) markChip(current);
 }
 
 // ---- 검색 ----
@@ -516,6 +561,11 @@ async function init() {
     render();
     window.scrollTo(0, 0);
   });
+  window.addEventListener("scroll", () => {
+    if (spyQueued) return;
+    spyQueued = true;
+    requestAnimationFrame(spyChip);
+  }, { passive: true });
   // 목록을 손가락으로 내리기 시작하면 자판을 닫아 화면을 넓힌다.
   window.addEventListener("touchmove", () => {
     if (document.activeElement === $("search")) $("search").blur();
