@@ -14,38 +14,25 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="banner-install" class="note" hidden>
-    <span>홈 화면에 추가하면 앱처럼 쓰고, 인터넷 없이도 열려요</span>
-    <button type="button" id="install-close">닫기</button>
+  <header id="bar-home" class="bar">
+    <form id="search-form" class="search" role="search">
+      <input id="search" type="search" placeholder="품목 검색 (예: 양파)" autocomplete="off"
+             enterkeyhint="search" aria-label="품목 검색">
+      <button type="button" id="search-clear" class="search__clear" aria-label="검색 지우기" hidden>✕</button>
+    </form>
+  </header>
+
+  <div id="home-head" class="head">
+    <p id="asof" class="head__asof"></p>
+    <p id="print-sample" class="band band--sample" hidden>샘플 데이터 · 실제 가격 아님</p>
+    <p id="print-offline" class="band" hidden></p>
+    <div id="banner-install" class="note" hidden>
+      <span>홈 화면에 추가하면 앱처럼 쓰고, 인터넷 없이도 열려요</span>
+      <button type="button" id="install-close">닫기</button>
+    </div>
   </div>
 
-  <div class="paper paper--main">
-    <header class="head">
-      <h1>장보기 예상 영수증</h1>
-      <p id="asof" class="head__asof"></p>
-      <p id="print-sample" class="print print--sample" hidden>** 샘플 데이터 · 실제 가격 아님 **</p>
-      <p id="print-offline" class="print" hidden></p>
-    </header>
-    <div class="dl"></div>
-    <main id="view" class="view" tabindex="-1"></main>
-  </div>
-
-  <footer id="dock" class="dock">
-    <div class="paper paper--end">
-      <div id="total" class="total" hidden></div>
-    </div>
-    <svg class="tear" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true">
-      <polygon points="0,0 100,0 97.5,4 95,0 92.5,4 90,0 87.5,4 85,0 82.5,4 80,0 77.5,4 75,0 72.5,4 70,0 67.5,4 65,0 62.5,4 60,0 57.5,4 55,0 52.5,4 50,0 47.5,4 45,0 42.5,4 40,0 37.5,4 35,0 32.5,4 30,0 27.5,4 25,0 22.5,4 20,0 17.5,4 15,0 12.5,4 10,0 7.5,4 5,0 2.5,4"/>
-    </svg>
-    <div id="dock-list" class="dock__body">
-      <form id="search-form" class="search" role="search">
-        <input id="search" type="search" placeholder="품목 검색 (예: 양파)" autocomplete="off"
-               enterkeyhint="search" aria-label="품목 검색">
-        <button type="button" id="search-clear" class="search__clear" aria-label="검색 지우기" hidden>✕</button>
-      </form>
-    </div>
-    <div id="dock-detail" class="dock__body" hidden></div>
-  </footer>
+  <main id="view" class="view" tabindex="-1"></main>
 
   <script type="module" src="app.js"></script>
 </body>
