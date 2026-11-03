@@ -5,12 +5,14 @@ import { addFavorite, getFavorites, removeFavorite } from "./store.js";
 
 // chip: 전체 품목에서 마지막으로 누른 부류 칸(다시 그려도 칠한 채로 둔다).
 // cameFromApp, homeScroll: 상세로 들어오기 전 화면과 그 화면의 스크롤 위치(←로 돌아갈 때 쓴다).
-// emart: data/emart.json(참가격 이마트 값, 없으면 null), emartItems: 그 상품들을 상품명 가나다순으로.
+// emart: data/emart.json(참가격 이마트 값, 없으면 null), emartItems: 그 상품들을 묶음 순서로, 묶음 안은 상품명 가나다순으로.
 const state = { data: null, emart: null, emartItems: [], byId: new Map(), favorites: [], query: "", chip: null,
                 cameFromApp: false, homeScroll: 0 };
 const $ = (id) => document.getElementById(id);
 // 이마트 상품의 id(즐겨찾기 열쇠, 상세 주소)는 상품명 앞에 이것을 붙인다.
 const EMART_ID = "이마트:";
+// 전체 품목에서 이마트 상품이 들어갈 칸 이름. 묶음이 안 붙은 옛 파일이면 "이마트" 칸 하나다.
+const emartCategory = (e) => (e.group ? `이마트 ${e.group}` : "이마트");
 
 // ---- 글자 만들기 ----
 
@@ -162,8 +164,12 @@ function renderHome() {
     if (!byCategory.has(e.category)) byCategory.set(e.category, []);
     byCategory.get(e.category).push(e);
   }
-  // 이마트 상품은 KAMIS 부류들 뒤 맨 끝 칸이다.
-  if (state.emartItems.length) byCategory.set("이마트", state.emartItems);
+  // 이마트 상품은 KAMIS 부류들 뒤에 묶음마다 칸을 둔다(emartItems가 이미 묶음 순서다).
+  for (const e of state.emartItems) {
+    const c = emartCategory(e);
+    if (!byCategory.has(c)) byCategory.set(c, []);
+    byCategory.get(c).push(e);
+  }
   view.append(h("section", { class: "section" },
     h("h2", { class: "sec" }, "전체 품목"),
     h("nav", { class: "chips", "aria-label": "부류" }, [...byCategory].map(([c, list]) =>
@@ -251,7 +257,8 @@ function renderEmartDetail(e) {
   const low = e.low ? pctText(e.low.pct) : null;
   $("view").append(h("section", { class: "detail" },
     h("h1", { class: "detail__name" }, e.name),
-    h("p", { class: "detail__meta" }, `이마트 · ${mdot(e.last_day)} 조사 · 이마트 ${e.stores}곳`),
+    h("p", { class: "detail__meta" },
+      `이마트 · ${e.group ? `${e.group} · ` : ""}${mdot(e.last_day)} 조사 · 이마트 ${e.stores}곳`),
     h("p", { class: "detail__price" }, won(e.usual), h("span", { class: "detail__unit" }, "평소 값")),
     e.low
       ? h("p", { class: "detail__normal down" },
@@ -362,8 +369,9 @@ const fetchBoth = () => Promise.all([fetchJson("data/prices.json"), fetchEmart()
 function setData(data, emart) {
   state.data = data;
   state.emart = emart;
+  const groups = emart?.groups ?? [];
   state.emartItems = (emart?.items ?? []).map((x) => ({ ...x, id: EMART_ID + x.name, emart: true }))
-    .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+    .sort((a, b) => groups.indexOf(a.group) - groups.indexOf(b.group) || a.name.localeCompare(b.name, "ko"));
   state.byId = new Map([...data.items, ...state.emartItems].map((e) => [e.id, e]));
 }
 
