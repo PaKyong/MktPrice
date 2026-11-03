@@ -3,7 +3,9 @@
 
 import { addItem, getList, removeItem, setQty } from "./store.js";
 
-const state = { data: null, byId: new Map(), list: [], query: "" };
+// browsing: 검색창을 눌렀지만 아직 아무것도 안 친 상태(부류별 전체 목록을 보인다).
+// browseCategory: 훑어보기에서 마지막으로 누른 부류 칸(담기로 다시 그려도 칠한 채로 둔다).
+const state = { data: null, byId: new Map(), list: [], query: "", browsing: false, browseCategory: null };
 const $ = (id) => document.getElementById(id);
 
 // ---- 글자 만들기 ----
@@ -139,11 +141,17 @@ function renderSearch() {
     return;
   }
   view.append(h("p", { class: "found" }, `"${q}" 찾은 품목 ${groups.size}개`));
+  view.append(...groupNodes(groups, qtyOf));
+}
+
+// 품목 묶음마다 품목 이름과 품종 줄("+ 담기" 또는 "담음 x2")을 만든다. 묶음 사이는 점선.
+function groupNodes(groups, qtyOf) {
+  const nodes = [];
   [...groups].forEach(([item, entries], i) => {
-    if (i) view.append(h("div", { class: "dl" }));
-    view.append(h("h2", { class: "group" }, item,
+    if (i) nodes.push(h("div", { class: "dl" }));
+    nodes.push(h("h2", { class: "group" }, item,
       entries.length > 1 ? h("span", { class: "group__count" }, ` ${entries.length}`) : null));
-    view.append(h("ul", { class: "items" }, entries.map((e) => {
+    nodes.push(h("ul", { class: "items" }, entries.map((e) => {
       const qty = qtyOf.get(e.id);
       // 싼 편·비싼 편일 때만 짧게 붙인다("▼싼 편"). 보통은 비워 둔다.
       const short = e.signal === "비싼 편" || e.signal === "싼 편"
@@ -163,6 +171,54 @@ function renderSearch() {
         }, qty ? `담음 x${qty}` : "+ 담기"));
     })));
   });
+  return nodes;
+}
+
+// ---- 훑어보기(부류별 전체 목록) ----
+
+// 장 볼 때 자주 찾는 순서. 여기 없는 부류는 뒤에 붙는다.
+const BROWSE_ORDER = ["채소류", "과일류", "수산물", "식량작물", "특용작물"];
+const orderOf = (c) => (BROWSE_ORDER.includes(c) ? BROWSE_ORDER.indexOf(c) : BROWSE_ORDER.length);
+
+function renderBrowse() {
+  const view = $("view");
+  // 담기로 다시 그려도 옆으로 밀어 둔 부류 칸 줄 위치를 그대로 둔다(지우기 전에 읽는다).
+  const chipsLeft = view.querySelector(".chips")?.scrollLeft ?? 0;
+  view.replaceChildren();
+  const qtyOf = new Map(state.list.map((x) => [x.id, x.qty]));
+  const byCategory = new Map();
+  for (const e of state.data.items) {
+    if (!byCategory.has(e.category)) byCategory.set(e.category, new Map());
+    const groups = byCategory.get(e.category);
+    if (!groups.has(e.item)) groups.set(e.item, []);
+    groups.get(e.item).push(e);
+  }
+  const categories = [...byCategory.keys()].sort((a, b) => orderOf(a) - orderOf(b));
+  const count = (c) => [...byCategory.get(c).values()].reduce((n, entries) => n + entries.length, 0);
+  view.append(h("p", { class: "found" }, `지금 값이 있는 품종 ${state.data.items.length}개`));
+  view.append(h("nav", { class: "chips", "aria-label": "부류" }, categories.map((c) =>
+    h("button", { type: "button", class: c === state.browseCategory ? "chip chip--on" : "chip", "data-category": c,
+                  onclick: () => jumpTo(c) }, `${c} ${count(c)}`))));
+  for (const c of categories) {
+    // 부류 안 품목은 가나다순.
+    const groups = new Map([...byCategory.get(c)].sort(([a], [b]) => a.localeCompare(b, "ko")));
+    view.append(h("section", { class: "browse", id: `cat-${c}` },
+      h("div", { class: "dl" }), h("h2", { class: "cat" }, c), ...groupNodes(groups, qtyOf)));
+  }
+  view.querySelector(".chips").scrollLeft = chipsLeft;
+}
+
+// 부류 칸을 누르면 그 부류로 건너뛰고 칸을 칠한다. 위에 붙은 칸 줄에 가리지 않게 그만큼 덜 내린다.
+function jumpTo(category) {
+  state.browseCategory = category;
+  $("search").blur();
+  for (const chip of document.querySelectorAll(".chip")) {
+    chip.classList.toggle("chip--on", chip.dataset.category === category);
+    if (chip.dataset.category === category) chip.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+  const section = document.getElementById(`cat-${category}`);
+  const chips = document.querySelector(".chips");
+  window.scrollTo(0, section.getBoundingClientRect().top + window.scrollY - chips.offsetHeight);
 }
 
 // ---- 상세 ----
@@ -265,6 +321,8 @@ function renderDetailDock(id, entry, e) {
 
 function goList() {
   state.query = "";
+  state.browsing = false;
+  state.browseCategory = null;
   $("search").value = "";
   if (location.hash === "#/" || location.hash === "") render();
   else location.hash = "#/";
@@ -277,9 +335,10 @@ function render() {
   const detail = Boolean(match);
   $("dock-list").hidden = detail;
   $("dock-detail").hidden = !detail;
-  $("search-clear").hidden = !state.query;
+  $("search-clear").hidden = !state.query && !state.browsing;
   if (detail) renderDetail(decodeURIComponent(match[1]));
   else if (state.query) renderSearch();
+  else if (state.browsing) renderBrowse();
   else renderList();
   renderTotal(detail);
 }
@@ -351,10 +410,22 @@ async function init() {
     ev.preventDefault();
     $("search").blur();
   });
+  // 아무것도 안 친 채로 검색창을 누르면 부류별 전체 목록을 보인다.
+  $("search").addEventListener("focus", () => {
+    if (state.query || state.browsing || location.hash.startsWith("#/item/")) return;
+    state.browsing = true;
+    render();
+    window.scrollTo(0, 0);
+  });
+  // ✕는 검색과 훑어보기를 닫고 내 목록으로 돌아간다(다시 누르면 또 훑어보기가 열리므로 자판도 닫는다).
   $("search-clear").addEventListener("click", () => {
     goList();
-    $("search").focus();
+    $("search").blur();
   });
+  // 검색 결과나 훑어보기 목록을 손가락으로 내리기 시작하면 자판을 닫아 화면을 넓힌다.
+  window.addEventListener("touchmove", () => {
+    if (document.activeElement === $("search")) $("search").blur();
+  }, { passive: true });
   window.addEventListener("hashchange", () => {
     render();
     window.scrollTo(0, 0);

@@ -133,6 +133,18 @@ button, input { font: inherit; color: inherit; }
   background: var(--paper); color: var(--ink); font-weight: 700; white-space: nowrap; cursor: pointer; }
 .add--done { background: var(--ink); color: var(--paper); cursor: default; }
 
+/* ---- 훑어보기(부류별 전체 목록) ---- */
+
+/* 부류 칸 줄은 목록을 내려도 종이 위쪽에 붙어 있다. 줄을 접으면 좁은 폰에서 세 줄(158px)이 되어
+   목록 자리가 좁아지므로, 한 줄로 두고 옆으로 밀어 본다. */
+.chips { position: sticky; top: 0; z-index: 1; display: flex; gap: 6px; margin: 0 -2px; padding: 6px 2px 8px;
+  overflow-x: auto; scrollbar-width: none; background: var(--paper); }
+.chips::-webkit-scrollbar { display: none; }
+.chip { flex: none; min-height: 44px; padding: 0 10px; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--paper);
+  color: var(--ink); font-size: 14px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.chip--on { background: var(--ink); color: var(--paper); }
+.cat { margin: 4px 0 2px; font-size: 18px; font-weight: 700; }
+
 /* ---- 상세(품종 하나짜리 영수증) ---- */
 
 .detail__head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
