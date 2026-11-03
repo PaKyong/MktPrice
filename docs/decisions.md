@@ -2,7 +2,7 @@
 
 ## 지금 상태
 - 2026-11-02: 1차 구현을 마쳤다. 목적과 요구 사항, 설계 ①~⑦(전체 구조, 수집, 화면용 파일, 화면, 오프라인·목록 저장, 샘플과 키 전환, 확인 방법)을 모두 정했다(아래 2026-11-02 기록들). 설계를 `docs/design.md` 하나로 묶었고 사용자가 확정했다. 구현 계획 `docs/plan.md`의 Task 1~9를 같은 날 이 대화에서 구현했다(샘플 데이터).
-- 2026-11-03: 푸시하고 Pages 출처를 "GitHub Actions"로 바꿨다. `https://pakyong.github.io/MktPrice/`가 샘플 데이터로 열린다. 손으로 돌린 실행에서 키 없이 수집을 건너뛰고 배포가 성공하는 것을 확인했다. KAMIS Open API 키를 신청했고 승인을 기다린다. 폰 확인(홈 화면 추가, 비행기 모드로 열기)과 가족 확인은 사용자가 대부분 마쳤다고 했다. 화면이 다시 보일 때 가격 파일을 새로 받게 고쳤다(아래 2026-11-03 기록). 화면 생김새를 "장보기 예상 영수증"으로 바꾸기로 하고 `docs/design.md` 8절을 고쳤다(구현 전). 남은 사람 할 일: 키가 오면 Secrets(`KAMIS_CERT_KEY`, `KAMIS_CERT_ID`)에 넣고 "Run workflow"로 돌리기.
+- 2026-11-03: 푸시하고 Pages 출처를 "GitHub Actions"로 바꿨다. `https://pakyong.github.io/MktPrice/`가 샘플 데이터로 열린다. 손으로 돌린 실행에서 키 없이 수집을 건너뛰고 배포가 성공하는 것을 확인했다. KAMIS Open API 키를 신청했고 승인을 기다린다. 폰 확인(홈 화면 추가, 비행기 모드로 열기)과 가족 확인은 사용자가 대부분 마쳤다고 했다. 화면이 다시 보일 때 가격 파일을 새로 받게 고쳤다(아래 2026-11-03 기록). 화면 생김새를 "장보기 예상 영수증"으로 바꾸기로 하고 `docs/design.md` 8절을 고쳤다. `docs/plan-receipt.md`(Task 1~4)대로 구현했다(글꼴 `fonts/`, 글꼴 도구 `tools/make_font.py`, 화면 파일, 서비스 워커 `mp-v4`). 남은 사람 할 일: 키가 오면 Secrets(`KAMIS_CERT_KEY`, `KAMIS_CERT_ID`)에 넣고 "Run workflow"로 돌리기.
 - 축산물(계란, 돼지고기, 닭고기)은 KAMIS 소매 품종 목록에 없어 1차에서 빠진다(아래 "KAMIS 코드표로 알게 된 것" 기록).
 - 키를 받으면 확인할 것: 대형유통만 골라낼 수 있는지(`marketname`), 평년 값이 오는지, 품종별 조사 단위, KAMIS가 그날 값을 올리는 시각, API 주소가 `https://`로 되는지.
 - 코드: 수집 스크립트 `collector/`, 화면(`index.html`, `app.js`, `store.js`, `sw.js`), 예약 실행 `.github/workflows/collect.yml`. git 저장소는 GitHub `PaKyong/MktPrice`(공개)다.
