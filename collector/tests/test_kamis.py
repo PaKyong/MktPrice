@@ -4,11 +4,11 @@ import io
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
-from typing import Iterator, List, Optional, Union
+from typing import Any, Dict, Iterator, List, Optional, Union
 
 import pytest
 
-from collector.kamis import KamisSource, SampleSource, make_source
+from collector.kamis import LOOKBACK_DAYS, KamisSource, SampleSource, latest_overall, make_source
 from collector.models import Item
 from collector.parse import KamisError
 
@@ -16,6 +16,7 @@ APPLE = Item(
     id="411-05", category_code="400", category_name="과일류", item_code="411", item_name="사과",
     kind_code="05", kind_name="홍로", rank_code="04", unit="10개", measure="count",
     amount=10.0, unit_label="개")
+DAY = date(2026, 11, 2)
 
 
 class FakeOpener:
@@ -42,26 +43,29 @@ def test_kamis_retries_then_succeeds() -> None:
     opener = FakeOpener([OSError(), OSError(), OSError(), b'{"data": {"error_code": "000", "item": []}}'])
     waits: List[float] = []
     src = KamisSource("SECRETKEY", "me", opener=opener, sleep=waits.append)
-    assert src.category("400")["data"]["error_code"] == "000"
+    assert src.category("400", DAY)["data"]["error_code"] == "000"
     assert waits == [2, 4, 8]
     assert "p_item_category_code=400" in opener.urls[0]
     assert "p_product_cls_code=01" in opener.urls[0]
     assert "action=dailyPriceByCategoryList" in opener.urls[0]
+    # KAMIS는 날짜가 없으면 "잘못된 요청 변수"(200)로 거절한다(2026-11-03 첫 실제 실행).
+    assert "p_regday=2026-11-02" in opener.urls[0]
 
 
 def test_kamis_gives_up_after_four_tries_without_leaking_key() -> None:
     opener = FakeOpener([OSError("https://x?p_cert_key=SECRETKEY")] * 4)
     src = KamisSource("SECRETKEY", "me", opener=opener, sleep=no_sleep)
     with pytest.raises(KamisError) as err:
-        src.category("400")
+        src.category("400", DAY)
     assert len(opener.urls) == 4
     assert "SECRETKEY" not in str(err.value)
+    assert "OSError" in str(err.value)
     assert err.value.__cause__ is None and err.value.__suppress_context__
 
 
 def test_kamis_does_not_retry_no_data() -> None:
     opener = FakeOpener([b'{"data": ["001"]}'])
-    assert KamisSource("k", "me", opener=opener, sleep=no_sleep).category("400") == {"data": ["001"]}
+    assert KamisSource("k", "me", opener=opener, sleep=no_sleep).category("400", DAY) == {"data": ["001"]}
     assert len(opener.urls) == 1
 
 
@@ -87,8 +91,65 @@ def test_sample_source_reads_files_and_missing_is_no_data(tmp_path: Path) -> Non
     (tmp_path / "period" / "411-05.json").write_text('{"data": {"error_code": "000", "item": []}}',
                                                       encoding="utf-8")
     src = SampleSource(tmp_path)
-    assert src.category("400") == {"data": ["001"]}
-    assert src.category("100") == {"data": ["001"]}
+    assert src.category("400", DAY) == {"data": ["001"]}
+    assert src.category("100", DAY) == {"data": ["001"]}
     assert src.period(APPLE, date(2026, 10, 3), date(2026, 11, 2))["data"]["error_code"] == "000"
     other = Item(**{**APPLE.__dict__, "id": "999-01"})
     assert src.period(other, date(2026, 10, 3), date(2026, 11, 2)) == {"data": ["001"]}
+
+
+def _row(dpr1: str) -> Dict[str, Any]:
+    return {"itemcode": "211", "kindcode": "01", "item_name": "배추", "kind_name": "봄", "rank": "상품",
+            "unit": "1포기", "day1": "당일 (11/02)", "dpr1": dpr1, "dpr3": "-", "dpr5": "-", "dpr6": "-",
+            "dpr7": "-"}
+
+
+class DaySource:
+    """정한 날 이후에는 값이 없는 전체 평균을 주고, 부른 날짜를 모으는 시험용 받기 쪽."""
+
+    name = "시험"
+
+    def __init__(self, last_day: Optional[date], blank: bool = False, fail: bool = False) -> None:
+        self.last_day = last_day
+        self.blank = blank
+        self.fail = fail
+        self.days: List[date] = []
+
+    def category(self, category_code: str, day: date) -> Dict[str, Any]:
+        self.days.append(day)
+        if self.fail:
+            raise KamisError("KAMIS 오류 코드 200")
+        if self.last_day is None or day > self.last_day:
+            return {"data": {"error_code": "000", "item": [_row("-")]}} if self.blank else {"data": ["001"]}
+        return {"data": {"error_code": "000", "item": [_row("3,000")]}}
+
+
+def test_latest_overall_steps_back_to_latest_day_with_values() -> None:
+    src = DaySource(last_day=date(2026, 11, 2))
+    rows, failed = latest_overall(src, date(2026, 11, 4))
+    assert failed == {}
+    assert [r.today for r in rows] == [3000] * 6
+    assert sorted(set(src.days), reverse=True) == [date(2026, 11, 4), date(2026, 11, 3), date(2026, 11, 2)]
+
+
+def test_latest_overall_treats_blank_values_as_no_data() -> None:
+    src = DaySource(last_day=date(2026, 11, 2), blank=True)
+    rows, _ = latest_overall(src, date(2026, 11, 3))
+    assert {r.today for r in rows} == {3000}
+    assert min(src.days) == date(2026, 11, 2)
+
+
+def test_latest_overall_gives_up_after_seven_days() -> None:
+    src = DaySource(last_day=None)
+    rows, failed = latest_overall(src, date(2026, 11, 9))
+    assert rows == [] and failed == {}
+    assert len(set(src.days)) == LOOKBACK_DAYS == 7
+    assert min(src.days) == date(2026, 11, 3)
+
+
+def test_latest_overall_stops_when_every_category_fails() -> None:
+    src = DaySource(last_day=date(2026, 11, 2), fail=True)
+    rows, failed = latest_overall(src, date(2026, 11, 4))
+    assert rows == []
+    assert failed == {code: "KAMIS 오류 코드 200" for code in ("100", "200", "300", "400", "500", "600")}
+    assert set(src.days) == {date(2026, 11, 4)}

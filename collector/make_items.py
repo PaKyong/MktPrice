@@ -12,27 +12,28 @@ from datetime import date
 from typing import List, Optional
 
 from collector.items import ITEMS_PATH, build_items, save_items
-from collector.kamis import SAMPLE_DIR, make_source
-from collector.models import CATEGORIES, OverallRow
-from collector.parse import parse_category
+from collector.kamis import SAMPLE_DIR, latest_overall, make_source
 
 # KAMIS 코드표 "등급코드" 시트의 상품 등급 코드(p_productrankcode).
 TOP_RANK_CODE = "04"
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    """부류 6개의 전체 평균 응답으로 품종 목록 파일을 다시 쓴다.
+    """가장 최근 조사일의 부류 6개 전체 평균 응답으로 품종 목록 파일을 다시 쓴다.
+
+    한 부류라도 받지 못하면 그 부류의 품종이 빠지지 않게 파일을 그대로 두고 끝낸다.
 
     Args:
         argv: 명령줄 인자(쓰지 않음).
 
     Returns:
-        종료 코드. 성공하면 0.
+        종료 코드. 성공하면 0, 받지 못한 부류가 있으면 1.
     """
     source = make_source(os.environ, SAMPLE_DIR)
-    rows: List[OverallRow] = []
-    for code in CATEGORIES:
-        rows.extend(parse_category(source.category(code), code, date.today()))
+    rows, failed = latest_overall(source, date.today())
+    if failed:
+        print(f"받지 못한 부류: {failed}", file=sys.stderr)
+        return 1
     items = build_items(rows, TOP_RANK_CODE)
     save_items(ITEMS_PATH, items)
     print(f"{source.name} 응답으로 품종 {len(items)}개를 {ITEMS_PATH}에 썼습니다.")

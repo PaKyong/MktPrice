@@ -38,10 +38,10 @@ class FailingSource:
         self.fail_categories = fail_categories
         self.fail_items = fail_items
 
-    def category(self, category_code: str) -> Dict[str, Any]:
+    def category(self, category_code: str, day: date) -> Dict[str, Any]:
         if category_code in self.fail_categories:
             raise KamisError("시험용 실패")
-        return self.inner.category(category_code)
+        return self.inner.category(category_code, day)
 
     def period(self, item: Item, start: date, end: date) -> Dict[str, Any]:
         if item.id in self.fail_items:
@@ -96,7 +96,7 @@ def test_run_total_failure_keeps_file(tmp_path: Path) -> None:
     run(sample_source(tmp_path, date(2026, 11, 2)), ITEMS, out, date(2026, 11, 2))
     before = out.read_bytes()
     every = {"100", "200", "300", "400", "500", "600"}
-    with pytest.raises(CollectError):
+    with pytest.raises(CollectError, match="부류 100: 시험용 실패"):
         run(FailingSource(sample_source(tmp_path, date(2026, 11, 3)), fail_categories=every),
             ITEMS, out, date(2026, 11, 3))
     with pytest.raises(CollectError):
@@ -135,8 +135,8 @@ class RenamedSource(FailingSource):
         self.kind_suffix = kind_suffix
         self.unit = unit
 
-    def category(self, category_code: str) -> Dict[str, Any]:
-        raw = json.loads(json.dumps(self.inner.category(category_code)))
+    def category(self, category_code: str, day: date) -> Dict[str, Any]:
+        raw = json.loads(json.dumps(self.inner.category(category_code, day)))
         if isinstance(raw.get("data"), dict):
             for row in raw["data"]["item"]:
                 row["kindcode"] += self.kind_suffix

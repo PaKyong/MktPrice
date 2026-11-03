@@ -10,12 +10,12 @@ import json
 import time
 import urllib.parse
 import urllib.request
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, Callable, Dict, Mapping, Protocol
+from typing import Any, Callable, Dict, List, Mapping, Protocol, Tuple
 
-from collector.models import Item
-from collector.parse import KamisError
+from collector.models import CATEGORIES, Item, OverallRow
+from collector.parse import KamisError, parse_category
 
 # 문서에는 http://로 나오지만 키가 주소에 실려 가므로 https://를 쓴다(키를 받은 뒤 확인).
 BASE_URL = "https://www.kamis.or.kr/service/price/xml.do"
@@ -23,6 +23,8 @@ RETRY_WAITS = (2, 4, 8)
 TIMEOUT_SECONDS = 30
 NO_DATA_RESPONSE: Dict[str, Any] = {"data": ["001"]}
 SAMPLE_DIR = Path(__file__).parent / "sample"
+# 오늘 값이 없으면(아직 안 올라왔거나 공휴일) 하루씩 거꾸로 이만큼까지 찾는다.
+LOOKBACK_DAYS = 7
 
 
 class Source(Protocol):
@@ -30,8 +32,8 @@ class Source(Protocol):
 
     name: str
 
-    def category(self, category_code: str) -> Dict[str, Any]:
-        """부류 하나의 전체 평균 응답을 돌려준다."""
+    def category(self, category_code: str, day: date) -> Dict[str, Any]:
+        """부류 하나의 그날 전체 평균 응답을 돌려준다."""
         ...
 
     def period(self, item: Item, start: date, end: date) -> Dict[str, Any]:
@@ -73,20 +75,27 @@ class KamisSource:
         query = {"p_cert_key": self._cert_key, "p_cert_id": self._cert_id,
                  "p_returntype": "json", **params}
         url = f"{BASE_URL}?{urllib.parse.urlencode(query)}"
+        reason = ""
         for attempt in range(len(RETRY_WAITS) + 1):
             try:
                 with self._opener(url, timeout=TIMEOUT_SECONDS) as response:
                     return json.loads(response.read().decode("utf-8"))
-            except (OSError, ValueError):
+            except (OSError, ValueError) as err:
+                # 원래 예외의 글은 주소(키)를 담을 수 있어 종류 이름만 남긴다.
+                reason = type(err).__name__
                 if attempt < len(RETRY_WAITS):
                     self._sleep(RETRY_WAITS[attempt])
-        raise KamisError(f"KAMIS 요청 실패: {what}") from None
+        raise KamisError(f"KAMIS 요청 실패({reason}): {what}") from None
 
-    def category(self, category_code: str) -> Dict[str, Any]:
-        """부류 하나의 전체 평균(소매) 응답을 받는다.
+    def category(self, category_code: str, day: date) -> Dict[str, Any]:
+        """부류 하나의 그날 전체 평균(소매) 응답을 받는다.
+
+        문서에는 날짜(p_regday)를 빼면 최근 조사일을 쓴다고 되어 있지만, 실제로는
+        날짜가 없으면 "잘못된 요청 변수"(200)로 거절하므로 늘 날짜를 넣는다.
 
         Args:
             category_code: KAMIS 부류 코드.
+            day: 조사일.
 
         Returns:
             KAMIS JSON 응답.
@@ -95,8 +104,9 @@ class KamisSource:
             "action": "dailyPriceByCategoryList",
             "p_product_cls_code": "01",
             "p_item_category_code": category_code,
+            "p_regday": day.isoformat(),
             "p_convert_kg_yn": "N",
-        }, f"전체 평균 {category_code}")
+        }, f"전체 평균 {category_code} {day.isoformat()}")
 
     def period(self, item: Item, start: date, end: date) -> Dict[str, Any]:
         """품종 하나의 기간 가게별 값 응답을 받는다.
@@ -134,11 +144,14 @@ class SampleSource:
             return dict(NO_DATA_RESPONSE)
         return json.loads(path.read_text(encoding="utf-8"))
 
-    def category(self, category_code: str) -> Dict[str, Any]:
+    def category(self, category_code: str, day: date) -> Dict[str, Any]:
         """`category_<부류코드>.json`을 읽는다. 없으면 "데이터 없음" 응답.
+
+        샘플은 미리 만든 날의 응답을 그대로 돌려주므로 day는 쓰지 않는다.
 
         Args:
             category_code: KAMIS 부류 코드.
+            day: 조사일(쓰지 않음).
 
         Returns:
             샘플 JSON 응답.
@@ -159,6 +172,37 @@ class SampleSource:
             샘플 JSON 응답.
         """
         return self._read(self._dir / "period" / f"{item.id}.json")
+
+
+def latest_overall(source: Source, today: date) -> Tuple[List[OverallRow], Dict[str, str]]:
+    """전체 평균 값이 있는 가장 최근 날의 줄을 받는다.
+
+    오늘부터 하루씩 거꾸로 최대 `LOOKBACK_DAYS`일 동안, 날마다 부류 6개를 부르고
+    응답을 해석한다. 어느 줄에든 당일 값이 있으면 그날에서 멈춘다(값이 "-"뿐인
+    줄은 값이 없는 것으로 본다). 모든 부류가 실패한 날은 더 거슬러 가지 않는다.
+
+    Args:
+        source: KAMIS 또는 샘플 받기 쪽.
+        today: 오늘 날짜(한국 시각). 날짜 글자의 연도를 정하는 데도 쓴다.
+
+    Returns:
+        (그날의 모든 등급 줄, 실패한 부류 코드 → 이유). 찾지 못하면 줄 목록이 비어 있다.
+    """
+    failed: Dict[str, str] = {}
+    for back in range(LOOKBACK_DAYS):
+        day = today - timedelta(days=back)
+        rows: List[OverallRow] = []
+        failed = {}
+        for code in CATEGORIES:
+            try:
+                rows.extend(parse_category(source.category(code, day), code, today))
+            except KamisError as err:
+                failed[code] = str(err)
+        if len(failed) == len(CATEGORIES):
+            return [], failed
+        if any(row.today is not None for row in rows):
+            return rows, failed
+    return [], failed
 
 
 def make_source(env: Mapping[str, str], sample_dir: Path) -> Source:
