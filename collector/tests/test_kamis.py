@@ -8,7 +8,8 @@ from typing import Any, Dict, Iterator, List, Optional, Union
 
 import pytest
 
-from collector.kamis import LOOKBACK_DAYS, KamisSource, SampleSource, latest_overall, make_source
+from collector.kamis import (LOOKBACK_DAYS, KamisSource, SampleSource, describe_response, latest_overall,
+                             make_source)
 from collector.models import Item
 from collector.parse import KamisError
 
@@ -126,7 +127,7 @@ class DaySource:
 
 def test_latest_overall_steps_back_to_latest_day_with_values() -> None:
     src = DaySource(last_day=date(2026, 11, 2))
-    rows, failed = latest_overall(src, date(2026, 11, 4))
+    rows, failed, _ = latest_overall(src, date(2026, 11, 4))
     assert failed == {}
     assert [r.today for r in rows] == [3000] * 6
     assert sorted(set(src.days), reverse=True) == [date(2026, 11, 4), date(2026, 11, 3), date(2026, 11, 2)]
@@ -134,22 +135,36 @@ def test_latest_overall_steps_back_to_latest_day_with_values() -> None:
 
 def test_latest_overall_treats_blank_values_as_no_data() -> None:
     src = DaySource(last_day=date(2026, 11, 2), blank=True)
-    rows, _ = latest_overall(src, date(2026, 11, 3))
+    rows, _, _ = latest_overall(src, date(2026, 11, 3))
     assert {r.today for r in rows} == {3000}
     assert min(src.days) == date(2026, 11, 2)
 
 
 def test_latest_overall_gives_up_after_seven_days() -> None:
     src = DaySource(last_day=None)
-    rows, failed = latest_overall(src, date(2026, 11, 9))
+    rows, failed, tried = latest_overall(src, date(2026, 11, 9))
     assert rows == [] and failed == {}
     assert len(set(src.days)) == LOOKBACK_DAYS == 7
     assert min(src.days) == date(2026, 11, 3)
+    assert len(tried) == 7
+    assert tried[0] == "2026-11-09 100:001 200:001 300:001 400:001 500:001 600:001"
 
 
 def test_latest_overall_stops_when_every_category_fails() -> None:
     src = DaySource(last_day=date(2026, 11, 2), fail=True)
-    rows, failed = latest_overall(src, date(2026, 11, 4))
+    rows, failed, tried = latest_overall(src, date(2026, 11, 4))
     assert rows == []
+    assert tried == ["2026-11-04 100:실패 200:실패 300:실패 400:실패 500:실패 600:실패"]
     assert failed == {code: "KAMIS 오류 코드 200" for code in ("100", "200", "300", "400", "500", "600")}
     assert set(src.days) == {date(2026, 11, 4)}
+
+
+def test_describe_response_names_codes_without_echoed_key() -> None:
+    echoed = [{"p_cert_key": "SECRETKEY", "p_cert_id": "me"}]
+    assert describe_response({"condition": echoed, "data": ["001"]}) == "001"
+    blank_and_priced = {"condition": echoed, "data": {"error_code": "000", "item": [_row("3,000"), _row("-")]}}
+    assert describe_response(blank_and_priced) == "000 2줄 값1"
+    assert describe_response({"data": []}) == "빈 목록"
+    assert describe_response({"condition": echoed}) == "모양 모름(NoneType)"
+    for raw in ({"condition": echoed, "data": [{"p_cert_key": "SECRETKEY"}]},):
+        assert "SECRETKEY" not in describe_response(raw)

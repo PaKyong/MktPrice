@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Protocol, Tuple
 
 from collector.models import CATEGORIES, Item, OverallRow
-from collector.parse import KamisError, parse_category
+from collector.parse import KamisError, parse_category, parse_price
 
 # 문서에는 http://로 나오지만 키가 주소에 실려 가므로 https://를 쓴다(키를 받은 뒤 확인).
 BASE_URL = "https://www.kamis.or.kr/service/price/xml.do"
@@ -174,35 +174,70 @@ class SampleSource:
         return self._read(self._dir / "period" / f"{item.id}.json")
 
 
-def latest_overall(source: Source, today: date) -> Tuple[List[OverallRow], Dict[str, str]]:
+def describe_response(raw: Any) -> str:
+    """응답의 모양을 키 없이 짧게 적는다(실패 원인을 찾을 때 로그에 남긴다).
+
+    KAMIS 응답의 condition 칸은 요청 변수(키 포함)를 그대로 되돌려 주므로 쓰지 않고,
+    오류 코드와 줄 수만 적는다. 예: "001", "000 53줄 값43", "빈 목록".
+
+    Args:
+        raw: KAMIS JSON 응답.
+
+    Returns:
+        짧은 설명.
+    """
+    data = raw.get("data") if isinstance(raw, dict) else None
+    if isinstance(data, list):
+        if not data:
+            return "빈 목록"
+        first = data[0]
+        return str(first)[:10] if isinstance(first, (str, int)) else f"모양 모름({type(first).__name__})"
+    if isinstance(data, dict):
+        items = data.get("item") or []
+        items = [items] if isinstance(items, dict) else items
+        priced = sum(isinstance(i, dict) and parse_price(i.get("dpr1")) is not None for i in items)
+        return f"{str(data.get('error_code', '?'))[:10]} {len(items)}줄 값{priced}"
+    return f"모양 모름({type(data).__name__})"
+
+
+def latest_overall(source: Source, today: date) -> Tuple[List[OverallRow], Dict[str, str], List[str]]:
     """전체 평균 값이 있는 가장 최근 날의 줄을 받는다.
 
     오늘부터 하루씩 거꾸로 최대 `LOOKBACK_DAYS`일 동안, 날마다 부류 6개를 부르고
     응답을 해석한다. 어느 줄에든 당일 값이 있으면 그날에서 멈춘다(값이 "-"뿐인
     줄은 값이 없는 것으로 본다). 모든 부류가 실패한 날은 더 거슬러 가지 않는다.
+    날마다 부류별 응답 모양을 한 줄씩 남긴다(예: "2026-11-03 100:001 200:000 53줄 값43 ...").
 
     Args:
         source: KAMIS 또는 샘플 받기 쪽.
         today: 오늘 날짜(한국 시각). 날짜 글자의 연도를 정하는 데도 쓴다.
 
     Returns:
-        (그날의 모든 등급 줄, 실패한 부류 코드 → 이유). 찾지 못하면 줄 목록이 비어 있다.
+        (그날의 모든 등급 줄, 실패한 부류 코드 → 이유, 날마다의 응답 모양).
+        찾지 못하면 줄 목록이 비어 있다.
     """
     failed: Dict[str, str] = {}
+    tried: List[str] = []
     for back in range(LOOKBACK_DAYS):
         day = today - timedelta(days=back)
         rows: List[OverallRow] = []
         failed = {}
+        notes: List[str] = []
         for code in CATEGORIES:
+            note = "실패"
             try:
-                rows.extend(parse_category(source.category(code, day), code, today))
+                raw = source.category(code, day)
+                note = describe_response(raw)
+                rows.extend(parse_category(raw, code, today))
             except KamisError as err:
                 failed[code] = str(err)
+            notes.append(f"{code}:{note}")
+        tried.append(f"{day.isoformat()} " + " ".join(notes))
         if len(failed) == len(CATEGORIES):
-            return [], failed
+            return [], failed, tried
         if any(row.today is not None for row in rows):
-            return rows, failed
-    return [], failed
+            return rows, failed, tried
+    return [], failed, tried
 
 
 def make_source(env: Mapping[str, str], sample_dir: Path) -> Source:

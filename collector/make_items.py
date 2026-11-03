@@ -21,18 +21,20 @@ TOP_RANK_CODE = "04"
 def main(argv: Optional[List[str]] = None) -> int:
     """가장 최근 조사일의 부류 6개 전체 평균 응답으로 품종 목록 파일을 다시 쓴다.
 
-    한 부류라도 받지 못하면 그 부류의 품종이 빠지지 않게 파일을 그대로 두고 끝낸다.
+    한 부류라도 받지 못했거나 7일 동안 값이 없으면, 품종이 빠지지 않게 파일을 그대로 두고 끝낸다.
 
     Args:
         argv: 명령줄 인자(쓰지 않음).
 
     Returns:
-        종료 코드. 성공하면 0, 받지 못한 부류가 있으면 1.
+        종료 코드. 성공하면 0, 받지 못한 부류가 있거나 7일 동안 값이 없으면 1.
     """
     source = make_source(os.environ, SAMPLE_DIR)
-    rows, failed = latest_overall(source, date.today())
-    if failed:
-        print(f"받지 못한 부류: {failed}", file=sys.stderr)
+    rows, failed, tried = latest_overall(source, date.today())
+    if failed or not rows:
+        # 값을 못 찾았는데 그대로 쓰면 품종 목록 파일이 비거나 부류가 빠진다.
+        print(f"전체 평균을 받지 못해 품종 목록 파일을 그대로 둡니다. 받지 못한 부류: {failed}. "
+              f"날마다 받은 응답: {' / '.join(tried)}", file=sys.stderr)
         return 1
     items = build_items(rows, TOP_RANK_CODE)
     save_items(ITEMS_PATH, items)

@@ -184,5 +184,8 @@ def test_run_prints_summary(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
 
 
 def test_run_without_sample_files_says_how_to_make_them(tmp_path: Path) -> None:
-    with pytest.raises(CollectError, match="make_sample"):
+    with pytest.raises(CollectError, match="make_sample") as err:
         run(SampleSource(tmp_path / "없음"), ITEMS, tmp_path / "prices.json", date(2026, 11, 3))
+    # 실패 원인을 찾을 수 있게 날마다 받은 응답 모양을 남긴다.
+    assert "2026-11-03 100:001 200:001" in str(err.value)
+    assert "2026-10-28 100:001" in str(err.value)
