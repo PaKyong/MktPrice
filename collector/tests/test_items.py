@@ -3,7 +3,7 @@
 from datetime import date
 from pathlib import Path
 
-from collector.items import build_items, load_items, save_items
+from collector.items import build_items, load_items, merge_items, save_items
 from collector.models import OverallRow
 
 
@@ -53,3 +53,16 @@ def test_build_items_drops_survey_unit_from_kind_name() -> None:
             make_row("411", "05", "상품", "10개", "04", kind_name="후지")]
     assert {i.id: i.kind_name for i in build_items(rows, rank_code="04")} == {
         "613-03": "국산(냉장)", "251-00": "가지", "411-05": "후지"}
+
+
+def test_merge_items_updates_seen_kinds_and_keeps_out_of_season_ones() -> None:
+    # 전체 평균은 그날 조사한 품종만 준다. 철이 지난 품종을 목록에서 지우면 철이 돌아와도 수집되지 않는다.
+    old = build_items([make_row("411", "01", "상품", "10개", "04", kind_name="홍옥"),
+                       make_row("251", "00", "상품", "10개", "04", category_code="200", item_name="가지",
+                                kind_name="가지")], rank_code="04")
+    new = build_items([make_row("251", "00", "상품", "3개", "04", category_code="200", item_name="가지",
+                                kind_name="가지(3개)"),
+                       make_row("411", "08", "상품", "10개", "04", kind_name="시나노골드")], rank_code="04")
+    merged = merge_items(old, new)
+    assert [i.id for i in merged] == ["251-00", "411-01", "411-08"]
+    assert {i.id: i.unit for i in merged} == {"251-00": "3개", "411-01": "10개", "411-08": "10개"}

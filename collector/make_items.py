@@ -11,7 +11,7 @@ import sys
 from datetime import date
 from typing import List, Optional
 
-from collector.items import ITEMS_PATH, TOP_RANK, build_items, save_items
+from collector.items import ITEMS_PATH, TOP_RANK, build_items, load_items, merge_items, save_items
 from collector.kamis import SAMPLE_DIR, latest_overall, make_source
 
 # KAMIS 코드표 "등급코드" 시트의 상품 등급 코드(p_productrankcode).
@@ -19,7 +19,9 @@ TOP_RANK_CODE = "04"
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    """가장 최근 조사일의 부류 6개 전체 평균 응답으로 품종 목록 파일을 다시 쓴다.
+    """가장 최근 조사일의 부류 6개 전체 평균 응답으로 품종 목록 파일을 고친다.
+
+    응답에 있는 품종은 새로 만든 것으로 바꾸고, 응답에 없는(철이 지난) 품종은 남긴다.
 
     한 부류라도 받지 못했거나 7일 동안 값이 없으면, 품종이 빠지지 않게 파일을 그대로 두고 끝낸다.
 
@@ -36,9 +38,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"전체 평균을 받지 못해 품종 목록 파일을 그대로 둡니다. 받지 못한 부류: {failed}. "
               f"날마다 받은 응답: {' / '.join(tried)}", file=sys.stderr)
         return 1
-    items = build_items(rows, TOP_RANK_CODE)
+    fresh = build_items(rows, TOP_RANK_CODE)
+    old = load_items(ITEMS_PATH) if ITEMS_PATH.exists() else []
+    items = merge_items(old, fresh)
     save_items(ITEMS_PATH, items)
-    print(f"{source.name} 응답으로 품종 {len(items)}개를 {ITEMS_PATH}에 썼습니다.")
+    print(f"{source.name} 응답의 품종 {len(fresh)}개로 고치고, 응답에 없는(철이 지난) 품종 "
+          f"{len(items) - len(fresh)}개는 남겨 품종 {len(items)}개를 {ITEMS_PATH}에 썼습니다.")
     return 0
 
 

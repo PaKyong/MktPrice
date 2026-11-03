@@ -76,6 +76,24 @@ def build_items(rows: List[OverallRow], rank_code: str) -> List[Item]:
     return items
 
 
+def merge_items(old: List[Item], new: List[Item]) -> List[Item]:
+    """다시 만든 품종 목록을 기존 목록에 합친다.
+
+    전체 평균 응답에는 그날 조사한 품종만 오므로, 새 목록에 있는 품종은 새 것으로
+    바꾸고(조사 단위·이름·등급), 새 목록에 없는 품종(철이 지난 품종)은 그대로 남긴다.
+
+    Args:
+        old: 기존 품종 목록.
+        new: 전체 평균 응답으로 새로 만든 품종 목록.
+
+    Returns:
+        품종 id 순으로 정렬한 합친 목록.
+    """
+    merged = {item.id: item for item in old}
+    merged.update({item.id: item for item in new})
+    return [merged[k] for k in sorted(merged)]
+
+
 def save_items(path: Path, items: List[Item]) -> None:
     """품종 목록을 사람이 고치기 쉬운 JSON으로 쓴다.
 
