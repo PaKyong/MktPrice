@@ -51,8 +51,6 @@ function h(tag, attrs = {}, ...children) {
   return el;
 }
 
-const signalChip = (e) => (e.signal ? h("span", { class: `sig ${signalClass[e.signal]}` }, e.signal) : null);
-
 // ---- 영수증 머리 ----
 
 function renderTop() {
@@ -129,7 +127,7 @@ function renderSearch() {
   const view = $("view");
   view.replaceChildren();
   const q = state.query;
-  const inList = new Set(state.list.map((x) => x.id));
+  const qtyOf = new Map(state.list.map((x) => [x.id, x.qty]));
   const groups = new Map();
   for (const e of state.data.items) {
     if (!e.item.includes(q) && !e.kind.includes(q)) continue;
@@ -140,26 +138,31 @@ function renderSearch() {
     view.append(h("p", { class: "empty" }, `"${q}"에 맞는 품목이 없어요. 다른 이름으로 찾아 보세요.`));
     return;
   }
-  for (const [item, entries] of groups) {
-    view.append(h("h2", { class: "group" }, item, h("span", { class: "group__count" }, `품종 ${entries.length}개`)));
-    view.append(h("ul", { class: "rows" }, entries.map((e) => {
-      const added = inList.has(e.id);
+  view.append(h("p", { class: "found" }, `"${q}" 찾은 품목 ${groups.size}개`));
+  [...groups].forEach(([item, entries], i) => {
+    if (i) view.append(h("div", { class: "dl" }));
+    view.append(h("h2", { class: "group" }, item,
+      entries.length > 1 ? h("span", { class: "group__count" }, ` ${entries.length}`) : null));
+    view.append(h("ul", { class: "items" }, entries.map((e) => {
+      const qty = qtyOf.get(e.id);
+      // 싼 편·비싼 편일 때만 짧게 붙인다("▼싼 편"). 보통은 비워 둔다.
+      const short = e.signal === "비싼 편" || e.signal === "싼 편"
+        ? h("span", { class: signalClass[e.signal] }, ` ${signalMark[e.signal].trim()}${e.signal}`) : null;
       return h("li", { class: "result" },
-        h("a", { class: "row", href: `#/item/${e.id}` },
-          h("span", { class: "row__name" }, e.kind),
-          h("span", { class: "row__price" }, h("span", { class: "row__unit" }, perUnit(e)), " ", won(e.unit_price)),
-          signalChip(e)),
+        h("a", { class: "item", href: `#/item/${e.id}` },
+          h("span", { class: "result__name" }, e.kind, short),
+          h("span", { class: "result__price" }, unitPriceText(e))),
         h("button", {
-          type: "button", class: added ? "add add--done" : "add", "aria-pressed": added ? "true" : "false",
+          type: "button", class: qty ? "add add--done" : "add", "aria-pressed": qty ? "true" : "false",
           onclick: async () => {
-            if (!added) {
+            if (!qty) {
               await addItem(e.id, displayName(e));
               await refresh();
             }
           },
-        }, added ? "✓ 담김" : "＋ 담기"));
+        }, qty ? `담음 x${qty}` : "+ 담기"));
     })));
-  }
+  });
 }
 
 // ---- 상세 ----
@@ -192,6 +195,9 @@ function trendChart(trend) {
   return svg;
 }
 
+// 왼쪽 글자와 오른쪽 값을 한 줄에 놓는다(영수증 줄).
+const pair = (cls, left, right) => h("p", { class: cls }, h("span", {}, left), right);
+
 function renderDetail(id) {
   const view = $("view");
   view.replaceChildren();
@@ -205,27 +211,29 @@ function renderDetail(id) {
     return;
   }
   const basis = state.data.basis.compare === "전국 대형유통 평균" ? "대형유통" : "조사처";
-  const changes = [["1주 전", e.change.week], ["1개월 전", e.change.month], ["1년 전", e.change.year]]
-    .filter(([, v]) => v !== null)
-    .map(([label, v]) => `${label} ${signedPct(v)}`)
-    .join(" · ");
+  const num = (n) => n.toLocaleString("ko-KR");
+  const changes = [["1주 전보다", e.change.week], ["1개월 전보다", e.change.month], ["1년 전보다", e.change.year]]
+    .filter(([, v]) => v !== null);
+  const pctClass = (v) => (v > 0 ? "sig--high" : v < 0 ? "sig--low" : "");
   view.append(h("section", { class: "detail" },
     h("div", { class: "detail__head" },
-      h("h2", { class: "detail__name" }, displayName(e)), signalChip(e)),
-    h("p", { class: "detail__meta" }, `${e.category} · ${md(e.as_of)} 기준`),
-    h("div", { class: "tag" },
-      h("span", { class: "tag__unit" }, perUnit(e)),
-      h("strong", { class: "tag__price" }, won(e.unit_price))),
-    h("p", { class: "detail__sub" }, `${e.unit} ${won(e.price)} · ${basis} ${e.stores}곳 평균`),
-    h("h3", {}, "대형마트 범위"),
-    h("p", { class: "detail__range" }, `${perUnit(e)} ${won(e.unit_range[0])}~${won(e.unit_range[1])}`),
-    h("h3", {}, "30일 추이 ", h("small", {}, `(${basis} 평균, ${e.unit})`)),
+      h("h2", { class: "detail__name" }, displayName(e)), h("span", { class: "muted" }, e.category)),
+    h("p", { class: "detail__meta" }, `${e.as_of.replaceAll("-", ".")} · ${basis} ${e.stores}곳 평균`),
+    h("div", { class: "dl" }),
+    h("p", { class: "detail__price" }, h("span", {}, perUnit(e)), h("strong", {}, won(e.unit_price))),
+    pair("detail__row muted", e.unit, h("span", {}, won(e.price))),
+    pair("detail__row muted", "가게마다(가운데 절반)",
+      h("span", {}, `${num(e.unit_range[0])}~${num(e.unit_range[1])}/${e.unit_label}`)),
+    h("div", { class: "dl" }),
+    pair("detail__row", "30일 추이", h("span", { class: "muted" }, `${e.unit} 기준`)),
     e.trend.length ? trendChart(e.trend) : h("p", { class: "muted" }, "추이 값이 없어요"),
-    h("h3", {}, "요즘 시기 ", h("small", {}, "KAMIS 전체 평균 기준")),
+    h("div", { class: "dl" }),
     e.change.normal !== null
-      ? h("p", { class: `detail__season ${signalClass[e.signal] || ""}` }, normalText(e.change.normal))
+      ? h("p", { class: "stamp-wrap" },
+          h("span", { class: `stamp ${signalClass[e.signal] || "sig--mid"}` }, normalText(e.change.normal)))
       : h("p", { class: "muted" }, "평년 값이 없어요"),
-    changes ? h("p", { class: "muted" }, changes) : null));
+    changes.map(([label, v]) => pair("detail__row", label, h("span", { class: pctClass(v) }, signedPct(v)))),
+    h("p", { class: "detail__foot" }, "* 요즘 시기는 KAMIS 전체 평균 기준")));
   renderDetailDock(id, entry, e);
 }
 
@@ -240,7 +248,7 @@ function renderDetailDock(id, entry, e) {
                         onclick: async () => { await setQty(id, entry.qty - 1); await refresh(); } }, "−"),
           h("output", { "aria-live": "polite" }, String(entry.qty)),
           h("button", { type: "button", "aria-label": "하나 더",
-                        onclick: async () => { await setQty(id, entry.qty + 1); await refresh(); } }, "＋")),
+                        onclick: async () => { await setQty(id, entry.qty + 1); await refresh(); } }, "+")),
         back),
       h("button", { type: "button", class: "btn btn--text",
                     onclick: async () => { await removeItem(id); state.list = await getList(); goList(); } },
@@ -248,7 +256,7 @@ function renderDetailDock(id, entry, e) {
   } else {
     dock.replaceChildren(h("div", { class: "dock__row" },
       h("button", { type: "button", class: "btn",
-                    onclick: async () => { await addItem(id, e ? displayName(e) : id); await refresh(); } }, "＋ 담기"),
+                    onclick: async () => { await addItem(id, e ? displayName(e) : id); await refresh(); } }, "+ 담기"),
       back));
   }
 }

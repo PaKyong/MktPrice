@@ -120,6 +120,44 @@ button, input { font: inherit; color: inherit; }
 .sig--low { color: var(--low); font-weight: 700; }
 .sig--mid { color: var(--muted); }
 
+/* ---- 검색 결과 ---- */
+
+.found { margin: 0 0 6px; text-align: center; color: var(--muted); font-size: 13px; }
+.group { margin: 4px 0 0; font-size: 16px; font-weight: 700; }
+.group__count { color: var(--muted); font-size: 13px; font-weight: 400; }
+.result { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.result .item { flex: 1; min-width: 0; }
+.result__name { display: block; }
+.result__price { display: block; color: var(--muted); font-size: 14px; }
+.add { min-height: 44px; min-width: 84px; padding: 0 10px; border: 1.5px solid var(--ink); border-radius: 4px;
+  background: var(--paper); color: var(--ink); font-weight: 700; white-space: nowrap; cursor: pointer; }
+.add--done { background: var(--ink); color: var(--paper); cursor: default; }
+
+/* ---- 상세(품종 하나짜리 영수증) ---- */
+
+.detail__head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.detail__head > span { white-space: nowrap; }
+.detail__name { margin: 0; font-size: 20px; font-weight: 700; }
+.detail__meta { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.detail__price { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin: 0; }
+.detail__price strong { font-size: 34px; line-height: 1.1; letter-spacing: -0.03em; white-space: nowrap; }
+.detail__row { display: flex; justify-content: space-between; gap: 12px; margin: 4px 0 0; font-size: 15px; }
+.detail__row > span:last-child { white-space: nowrap; }
+.detail__row.muted { font-size: 14px; }
+.detail__foot { margin: 14px 0 8px; text-align: center; color: var(--muted); font-size: 12px; }
+
+/* 요즘 시기 도장: 테두리만, 조금 기울여 찍는다. 보통은 잉크색 */
+.stamp-wrap { margin: 10px 0 14px; text-align: center; }
+.stamp { display: inline-block; padding: 4px 14px; border: 2.5px solid currentColor; border-radius: 4px;
+  font-size: 18px; font-weight: 700; transform: rotate(-4deg); }
+.stamp.sig--mid { color: var(--ink); }
+
+.chart { display: block; width: 100%; height: auto; margin-top: 6px; }
+.chart__base { stroke: var(--dash); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.chart__line { fill: none; stroke: var(--ink); stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
+.chart__dot { fill: var(--ink); }
+.chart__label { fill: var(--muted); font-size: 12px; }
+
 /* ---- 합계 ---- */
 
 .total {
