@@ -1,7 +1,7 @@
 // 장보기 가격 화면: 첫 화면(즐겨찾기, 전체 품목), 검색, 상세.
 // 가격 계산은 수집 스크립트가 끝내 두었고, 여기서는 보여 주기만 한다.
 
-import { addFavorite, getFavorites, removeFavorite } from "./store.js";
+import { addFavorite, getFavorites, moveFavorite, removeFavorite } from "./store.js";
 
 // chip: 전체 품목에서 마지막으로 누른 부류 칸(다시 그려도 칠한 채로 둔다). chipsLeft: 칸 줄을 옆으로 민 위치.
 // filter: "싼 편"·"비싼 편"을 모아 보는 중이면 그 이름, 아니면 null.
@@ -185,13 +185,17 @@ function browseOrder() {
 function renderHome() {
   const view = $("view");
   view.replaceChildren();
-  const favRows = state.favorites.map((f) =>
-    (state.byId.has(f.id) ? itemRow(state.byId.get(f.id), true, false) : missingRowNode(f)));
+  const favRows = state.favorites.map((f) => {
+    const li = state.byId.has(f.id) ? itemRow(state.byId.get(f.id), true, false) : missingRowNode(f);
+    li.dataset.id = f.id;
+    return li;
+  });
+  const favList = favRows.length ? h("ul", { class: "rows rows--fav" }, favRows) : null;
+  if (favList) setupFavGestures(favList);
   view.append(h("section", { class: "section" },
     h("h2", { class: "sec" }, "즐겨찾기"),
-    favRows.length
-      ? h("ul", { class: "rows" }, favRows)
-      : h("p", { class: "empty" }, "상세 화면에서 ☆를 누르면 여기 모여요")));
+    favList ?? h("p", { class: "empty" }, "상세 화면에서 ☆를 누르면 여기 모여요"),
+    favRows.length > 1 ? h("p", { class: "fav-hint" }, "길게 눌러 끌면 순서를 바꾸고, 옆으로 밀면 빠져요") : null));
 
   const byCategory = new Map();
   for (const e of browseOrder()) {
@@ -222,6 +226,112 @@ function renderHome() {
       h("h3", { class: "cat" }, title), h("ul", { class: "rows" }, list.map((e) => itemRow(e, false, true)))))));
   // 다시 그려도, 상세에 갔다 와도 옆으로 밀어 둔 부류 칸 줄 위치를 그대로 둔다(render가 지우기 전에 적어 둔다).
   view.querySelector(".chips").scrollLeft = state.chipsLeft;
+}
+
+// ---- 즐겨찾기 끌어 옮기기, 밀어 빼기 ----
+
+// 길게 누르면(그동안 거의 안 움직이면) 줄을 들어 위아래로 끌어 순서를 바꾼다.
+// 옆으로 밀면 줄이 따라오고, 줄 폭의 40% 넘게 밀고 떼면 바로 빠진다(아래에 "되돌리기" 띠).
+// 위아래로 먼저 움직이면 보통처럼 목록이 내려간다. 끌거나 민 뒤에는 눌림이 상세로 가지 않는다.
+const HOLD_MS = 450;
+const MOVE_PX = 10;
+function setupFavGestures(ul) {
+  let g = null;
+  const reset = () => {
+    if (!g) return;
+    clearTimeout(g.timer);
+    g.li.classList.remove("row--lifted");
+    g.li.style.transform = "";
+    g = null;
+  };
+  ul.addEventListener("touchstart", (ev) => {
+    const li = ev.target.closest("li[data-id]");
+    if (!li || ev.touches.length > 1) return;
+    const t = ev.touches[0];
+    g = { li, x0: t.clientX, y0: t.clientY, dx: 0, mode: "wait", start: [...ul.children].indexOf(li) };
+    g.timer = setTimeout(() => {
+      if (g?.mode !== "wait") return;
+      g.mode = "drag";
+      li.classList.add("row--lifted");
+      navigator.vibrate?.(10);
+    }, HOLD_MS);
+  }, { passive: true });
+  ul.addEventListener("touchmove", (ev) => {
+    if (!g) return;
+    const t = ev.touches[0];
+    const dx = t.clientX - g.x0;
+    const dy = t.clientY - g.y0;
+    if (g.mode === "wait") {
+      if (Math.abs(dx) > MOVE_PX && Math.abs(dx) > Math.abs(dy)) g.mode = "swipe";
+      else if (Math.abs(dy) > MOVE_PX) g.mode = "scroll";
+      if (g.mode !== "wait") clearTimeout(g.timer);
+    }
+    if (g.mode === "scroll") return;
+    if (g.mode === "wait") return;
+    ev.preventDefault();
+    if (g.mode === "swipe") {
+      g.dx = dx;
+      g.li.style.transform = `translateX(${dx}px)`;
+      return;
+    }
+    // 끄는 중: 손가락이 옆 줄의 절반을 넘으면 그 줄과 자리를 바꾼다. 줄이 옮겨 간 만큼 기준점도 옮긴다.
+    const prev = g.li.previousElementSibling;
+    const next = g.li.nextElementSibling;
+    if (next && dy > next.offsetHeight / 2) {
+      next.after(g.li);
+      g.y0 += next.offsetHeight;
+    } else if (prev && dy < -prev.offsetHeight / 2) {
+      prev.before(g.li);
+      g.y0 -= prev.offsetHeight;
+    }
+    g.li.style.transform = `translateY(${t.clientY - g.y0}px)`;
+  }, { passive: false });
+  ul.addEventListener("touchend", async () => {
+    if (!g) return;
+    const { li, mode, dx, start } = g;
+    const id = li.dataset.id;
+    // 끌거나 민 다음의 눌림(click)은 상세로 가지 않게 한 번 막는다.
+    if (mode === "drag" || mode === "swipe") ul.dataset.blockClick = "1";
+    reset();
+    if (mode === "drag") {
+      const to = [...ul.children].indexOf(li);
+      if (to !== start) {
+        await moveFavorite(id, to);
+        await refresh();
+      }
+    } else if (mode === "swipe" && Math.abs(dx) > li.offsetWidth * 0.4) {
+      const fav = state.favorites.find((f) => f.id === id);
+      await removeFavorite(id);
+      await refresh();
+      showUndo(fav, start);
+    }
+  });
+  ul.addEventListener("touchcancel", reset);
+  ul.addEventListener("click", (ev) => {
+    if (ul.dataset.blockClick) {
+      ev.preventDefault();
+      delete ul.dataset.blockClick;
+    }
+  }, true);
+  // 길게 누르면 뜨는 링크 메뉴(안드로이드)를 막는다. 아이폰 미리보기는 CSS로 막는다.
+  ul.addEventListener("contextmenu", (ev) => ev.preventDefault());
+}
+
+// 밀어서 뺀 즐겨찾기를 5초 동안 되돌릴 수 있게 아래에 띠를 띄운다.
+let undoTimer = null;
+function showUndo(fav, index) {
+  const toast = $("toast");
+  $("toast-text").textContent = `${fav.name || fav.id} · 즐겨찾기에서 뺐어요`;
+  toast.hidden = false;
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(() => { toast.hidden = true; }, 5000);
+  $("toast-undo").onclick = async () => {
+    clearTimeout(undoTimer);
+    toast.hidden = true;
+    await addFavorite(fav.id, fav.name);
+    await moveFavorite(fav.id, index);
+    await refresh();
+  };
 }
 
 // 신호가 "싼 편"·"비싼 편"인 KAMIS 품종. 평년 대비 차이가 큰 것부터. 없는 쪽은 칸을 두지 않는다.

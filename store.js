@@ -57,3 +57,13 @@ export async function removeFavorite(id) {
   memory = load().filter((entry) => entry.id !== id);
   save();
 }
+
+// 즐겨찾기 하나를 toIndex 자리로 옮긴다(끌어서 순서 바꾸기, 뺀 것 되돌리기). 없는 id면 그대로 둔다.
+export async function moveFavorite(id, toIndex) {
+  const list = load();
+  const from = list.findIndex((entry) => entry.id === id);
+  if (from < 0) return;
+  const [entry] = list.splice(from, 1);
+  list.splice(Math.min(Math.max(toIndex, 0), list.length), 0, entry);
+  save();
+}

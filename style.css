@@ -191,3 +191,32 @@ button, input { font: inherit; color: inherit; }
 .judge__label input::placeholder { color: var(--muted); }
 .judge__result { margin: 6px 0 0; font-size: 15px; font-weight: 700; }
 .judge__result:empty { display: none; }
+
+/* ---- 즐겨찾기 끌어 옮기기, 밀어 빼기, 되돌리기 띠 ---- */
+
+/* 길게 누르면 뜨는 링크 미리보기(아이폰)와 글자 고르기를 막는다 */
+.rows--fav a { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.rows--fav li { position: relative; background: var(--bg); }
+.row--lifted { z-index: 1; box-shadow: 0 6px 18px rgb(0 0 0 / 18%); border-radius: 8px; }
+.fav-hint { margin: 2px 0 12px; color: var(--muted); font-size: 12px; }
+
+.toast {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 0 0 14px;
+  border-radius: 12px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 14px;
+}
+.toast[hidden] { display: none; }
+.toast span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toast button { min-height: 48px; padding: 0 14px; border: 0; background: none; color: var(--bg);
+  font-weight: 700; text-decoration: underline; white-space: nowrap; cursor: pointer; }
