@@ -138,11 +138,15 @@ button, input { font: inherit; color: inherit; }
   color: inherit;
   text-decoration: none;
 }
+/* 이마트 상품 줄은 그래프가 없어(조사가 6번뿐) 이름이 그 자리까지 쓴다. 상품명이 길다. */
+.row--emart { grid-template-columns: minmax(0, 1fr) auto; }
 .row:active { opacity: 0.6; }
 .row__name { font-size: 16px; line-height: 1.35; }
 .row__sub { display: block; margin-top: 1px; color: var(--muted); font-size: 13px; }
 .row__price { text-align: right; white-space: nowrap; font-weight: 700; }
 .row__pct { display: block; font-size: 13px; font-weight: 400; }
+/* 검색 결과·즐겨찾기에서 이마트 상품을 KAMIS 품종과 구별하는 작은 표시 */
+.tag { margin-right: 4px; padding: 1px 5px; border-radius: 4px; background: var(--soft); color: var(--muted); font-size: 11px; }
 .spark { display: block; width: 56px; height: 24px; }
 .spark polyline { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
 

@@ -5,8 +5,12 @@ import { addFavorite, getFavorites, removeFavorite } from "./store.js";
 
 // chip: 전체 품목에서 마지막으로 누른 부류 칸(다시 그려도 칠한 채로 둔다).
 // cameFromApp, homeScroll: 상세로 들어오기 전 화면과 그 화면의 스크롤 위치(←로 돌아갈 때 쓴다).
-const state = { data: null, byId: new Map(), favorites: [], query: "", chip: null, cameFromApp: false, homeScroll: 0 };
+// emart: data/emart.json(참가격 이마트 값, 없으면 null), emartItems: 그 상품들을 상품명 가나다순으로.
+const state = { data: null, emart: null, emartItems: [], byId: new Map(), favorites: [], query: "", chip: null,
+                cameFromApp: false, homeScroll: 0 };
 const $ = (id) => document.getElementById(id);
+// 이마트 상품의 id(즐겨찾기 열쇠, 상세 주소)는 상품명 앞에 이것을 붙인다.
+const EMART_ID = "이마트:";
 
 // ---- 글자 만들기 ----
 
@@ -15,6 +19,12 @@ const md = (iso) => {
   const [, m, d] = iso.split("-");
   return `${Number(m)}월 ${Number(d)}일`;
 };
+const mdot = (iso) => {
+  const [, m, d] = iso.split("-");
+  return `${Number(m)}.${Number(d)}`;
+};
+// 상품명에 %가 든 이마트 상품이 있어 주소에 넣을 때는 늘 인코딩한다.
+const itemHref = (id) => `#/item/${encodeURIComponent(id)}`;
 // 품종 이름에 품목 이름이 들어 있으면 품종 이름만 쓴다("양파 · 양파" → "양파", "파 · 대파" → "대파").
 const displayName = (e) => (e.kind.includes(e.item) ? e.kind : `${e.item} ${e.kind}`);
 const perUnit = (e) => (e.measure === "weight" ? "100g당" : `1${e.unit_label}당`);
@@ -54,7 +64,8 @@ function svgEl(tag, attrs, text) {
 
 function renderTop() {
   const { data } = state;
-  $("asof").textContent = `${data.as_of.replaceAll("-", ".")} 기준 · 출처 ${data.source}`;
+  $("asof").textContent = `${data.as_of.replaceAll("-", ".")} 기준 · 출처 ${data.source}`
+    + (state.emart ? ` · 이마트 ${mdot(state.emart.as_of)} 조사` : "");
   $("print-sample").hidden = data.source !== "샘플";
   const offline = $("print-offline");
   offline.hidden = navigator.onLine;
@@ -82,7 +93,7 @@ function rowNode(e) {
   const pct = pctText(e.change.normal);
   const tag = e.signal === "싼 편" ? "down" : e.signal === "비싼 편" ? "up" : null;
   return h("li", {},
-    h("a", { class: "row", href: `#/item/${e.id}` },
+    h("a", { class: "row", href: itemHref(e.id) },
       h("span", { class: "row__name" }, displayName(e),
         h("span", { class: "row__sub" }, perUnit(e),
           tag ? [" · ", h("span", { class: tag }, e.signal)] : null,
@@ -93,11 +104,32 @@ function rowNode(e) {
         h("span", { class: `row__pct ${pct.cls}` }, pct.text))));
 }
 
-// 즐겨찾기에 있지만 철이 지나 가격 파일에서 빠진 품종.
+const emartTag = () => h("span", { class: "tag" }, "이마트");
+
+// 이마트 상품의 한 줄: 왼쪽 상품명과 "평소 값", 오른쪽 평소 값과 행사 때 최저 값. 그래프 칸은 없다(조사가 6번뿐).
+// showTag: 검색 결과와 즐겨찾기처럼 KAMIS 품종과 섞이는 곳에서 "이마트" 표시를 붙인다.
+function emartRowNode(e, showTag) {
+  return h("li", {},
+    h("a", { class: "row row--emart", href: itemHref(e.id) },
+      h("span", { class: "row__name" }, e.name,
+        h("span", { class: "row__sub" }, showTag ? emartTag() : null,
+          e.low ? "평소 값" : "평소 값 · 행사 없음",
+          // 마지막 조사일에 값이 없던 상품은 그 전 값이다.
+          e.last_day !== state.emart.as_of ? ` · ${md(e.last_day)} 값` : null)),
+      h("span", { class: "row__price" }, won(e.usual),
+        e.low
+          ? h("span", { class: "row__pct down" }, `행사 ${e.low.price.toLocaleString("ko-KR")}`)
+          : h("span", { class: "row__pct muted" }, "-"))));
+}
+
+const itemRow = (e, showTag) => (e.emart ? emartRowNode(e, showTag) : rowNode(e));
+
+// 즐겨찾기에 있지만 가격 파일에서 빠진 품종(철이 지남)이나 이마트 상품(조사가 끊김).
 function missingRowNode(fav) {
   return h("li", {},
-    h("a", { class: "row", href: `#/item/${fav.id}` },
-      h("span", { class: "row__name" }, fav.name || fav.id, h("span", { class: "row__sub" }, "지금 값 없음"))));
+    h("a", { class: "row", href: itemHref(fav.id) },
+      h("span", { class: "row__name" }, fav.name || fav.id,
+        h("span", { class: "row__sub" }, fav.id.startsWith(EMART_ID) ? emartTag() : null, "지금 값 없음"))));
 }
 
 // 장 볼 때 자주 찾는 부류 순서. 여기 없는 부류는 뒤에 붙는다.
@@ -118,7 +150,7 @@ function renderHome() {
   const chipsLeft = view.querySelector(".chips")?.scrollLeft ?? 0;
   view.replaceChildren();
   const favRows = state.favorites.map((f) =>
-    (state.byId.has(f.id) ? rowNode(state.byId.get(f.id)) : missingRowNode(f)));
+    (state.byId.has(f.id) ? itemRow(state.byId.get(f.id), true) : missingRowNode(f)));
   view.append(h("section", { class: "section" },
     h("h2", { class: "sec" }, "즐겨찾기"),
     favRows.length
@@ -130,13 +162,15 @@ function renderHome() {
     if (!byCategory.has(e.category)) byCategory.set(e.category, []);
     byCategory.get(e.category).push(e);
   }
+  // 이마트 상품은 KAMIS 부류들 뒤 맨 끝 칸이다.
+  if (state.emartItems.length) byCategory.set("이마트", state.emartItems);
   view.append(h("section", { class: "section" },
     h("h2", { class: "sec" }, "전체 품목"),
     h("nav", { class: "chips", "aria-label": "부류" }, [...byCategory].map(([c, list]) =>
       h("button", { type: "button", class: c === state.chip ? "chip chip--on" : "chip", "data-category": c,
                     onclick: () => jumpTo(c) }, `${c} ${list.length}`))),
     [...byCategory].map(([c, list]) => h("section", { class: "cat-block", id: `cat-${c}` },
-      h("h3", { class: "cat" }, c), h("ul", { class: "rows" }, list.map(rowNode))))));
+      h("h3", { class: "cat" }, c), h("ul", { class: "rows" }, list.map((e) => itemRow(e, false)))))));
   view.querySelector(".chips").scrollLeft = chipsLeft;
 }
 
@@ -159,13 +193,15 @@ function renderSearch() {
   const view = $("view");
   view.replaceChildren();
   const q = state.query;
-  const found = browseOrder().filter((e) => e.item.includes(q) || e.kind.includes(q));
+  // KAMIS 품종 뒤에 이마트 상품(전체 품목과 같은 순서).
+  const found = [...browseOrder().filter((e) => e.item.includes(q) || e.kind.includes(q)),
+                 ...state.emartItems.filter((e) => e.name.includes(q))];
   if (!found.length) {
     view.append(h("p", { class: "found" }, `"${q}"에 맞는 품목이 없어요. 다른 이름으로 찾아 보세요.`));
     return;
   }
   view.append(h("p", { class: "found" }, `"${q}" 찾은 품종 ${found.length}개`),
-    h("ul", { class: "rows" }, found.map(rowNode)));
+    h("ul", { class: "rows" }, found.map((e) => itemRow(e, true))));
 }
 
 // ---- 상세 ----
@@ -278,29 +314,37 @@ async function refresh() {
   render();
 }
 
-// 가격 파일을 받는다. 못 받으면 null.
-async function fetchPrices() {
+// 가격 파일(data/prices.json, data/emart.json)을 받는다. 못 받으면(이마트 파일은 키를 넣기 전에는 없다) null.
+async function fetchJson(path) {
   try {
-    const res = await fetch("data/prices.json", { cache: "no-cache" });
+    const res = await fetch(path, { cache: "no-cache" });
     return res.ok ? await res.json() : null;
   } catch {
     return null;
   }
 }
 
-function setData(data) {
+const fetchBoth = () => Promise.all([fetchJson("data/prices.json"), fetchJson("data/emart.json")]);
+
+// 이마트 상품은 id를 붙여 KAMIS 품종과 같은 지도에 넣는다(즐겨찾기와 상세 주소가 같은 길을 쓴다).
+function setData(data, emart) {
   state.data = data;
-  state.byId = new Map(data.items.map((e) => [e.id, e]));
+  state.emart = emart;
+  state.emartItems = (emart?.items ?? []).map((x) => ({ ...x, id: EMART_ID + x.name, emart: true }))
+    .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  state.byId = new Map([...data.items, ...state.emartItems].map((e) => [e.id, e]));
 }
 
 // 화면이 다시 보일 때 가격 파일을 새로 받는다. 홈 화면 앱은 며칠 뒤 다시 띄워도
 // 처음부터 열리지 않아서, 이렇게 안 하면 옛 가격이 남는다.
-// 파일을 만든 시각이 같거나 못 받으면(오프라인) 지금 화면을 그대로 둔다.
+// 두 파일 다 만든 시각이 같거나 못 받으면(오프라인) 지금 화면을 그대로 둔다.
 async function reloadPrices() {
   if (document.visibilityState !== "visible") return;
-  const data = await fetchPrices();
-  if (!data || data.generated_at === state.data?.generated_at) return;
-  setData(data);
+  const [data, fetched] = await fetchBoth();
+  if (!data) return;
+  const emart = fetched ?? state.emart;
+  if (data.generated_at === state.data?.generated_at && emart?.generated_at === state.emart?.generated_at) return;
+  setData(data, emart);
   await refresh();
 }
 
@@ -375,13 +419,13 @@ async function init() {
   window.addEventListener("offline", render);
   document.addEventListener("visibilitychange", reloadPrices);
 
-  const data = await fetchPrices();
+  const [data, emart] = await fetchBoth();
   if (!data) {
     $("view").replaceChildren(h("p", { class: "empty" },
       "가격 파일을 불러오지 못했어요. 인터넷에 연결한 뒤 다시 열어 주세요."));
     return;
   }
-  setData(data);
+  setData(data, emart);
   await refresh();
 }
 
