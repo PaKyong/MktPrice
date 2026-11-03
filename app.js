@@ -418,6 +418,12 @@ function setupInstallHint() {
 async function init() {
   setupInstallHint();
   if ("serviceWorker" in navigator) {
+    // 새 화면 파일을 다 받은 서비스 워커가 자리를 잡으면 한 번 다시 연다. 안 그러면 다음에 열 때까지 옛 화면이 남는다.
+    // 처음 설치할 때(전에 맡은 서비스 워커가 없을 때)는 이미 새 화면이라 다시 열지 않는다.
+    const hadWorker = Boolean(navigator.serviceWorker.controller);
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (hadWorker) window.location.reload();
+    });
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
   // 검색 결과나 첫 화면은 맨 위부터 보인다. 목록을 내린 채로 치면 결과 앞쪽이 위 막대 뒤에 가려지기 때문이다.
