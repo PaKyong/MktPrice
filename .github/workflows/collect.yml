@@ -1,4 +1,5 @@
-# 평일 저녁 KAMIS 가격을 받아 data/prices.json을 커밋하고, GitHub Pages에 배포한다.
+# 평일 저녁 KAMIS 가격을 받아 data/prices.json을, 참가격 이마트 값(새 달이 있을 때만)을 받아
+# data/emart.json을 커밋하고, GitHub Pages에 배포한다.
 # Actions가 기본 토큰으로 푸시한 커밋은 다른 워크플로를 깨우지 않으므로, 수집과 배포를 한 워크플로에 둔다.
 name: collect
 
@@ -28,25 +29,28 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write
+    # 맨 끝 emart-check가 참가격 단계의 결과를 본다.
+    outputs:
+      emart: ${{ steps.emart.outcome }}
     env:
       KAMIS_CERT_KEY: ${{ secrets.KAMIS_CERT_KEY }}
       KAMIS_CERT_ID: ${{ secrets.KAMIS_CERT_ID }}
+      DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
     steps:
       - name: 키 확인
         id: key
         run: |
           if [ -z "$KAMIS_CERT_KEY" ] || [ -z "$KAMIS_CERT_ID" ]; then
-            echo "키 없음: 수집을 건너뜁니다"
+            echo "KAMIS 키 없음: KAMIS 수집을 건너뜁니다"
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # 참가격은 KAMIS 키가 없어도 돌므로 받아 오기와 uv는 늘 준비한다.
       - uses: actions/checkout@v4
-        if: steps.key.outputs.ready == 'true'
 
       - uses: astral-sh/setup-uv@v6
-        if: steps.key.outputs.ready == 'true'
 
       # "Run workflow"에서 고른 때만 돈다. 실패하면(한 부류라도 못 받음) 목록은 그대로 두고 멈춘다.
       - name: 품종 목록 다시 만들기
@@ -78,6 +82,31 @@ jobs:
           git commit -m "${message}"
           # 기다리는 사이 다른 실행이나 사람이 먼저 푸시했어도 거절되지 않게 받아 온 뒤 푸시한다.
           # 봇은 data/prices.json만 바꾸므로 보통 충돌하지 않는다.
+          git pull --rebase
+          git push
+
+      # 키(DATA_GO_KR_KEY)가 없으면 "참가격 키 없음"을 남기고 성공으로 끝난다.
+      # 실패해도 KAMIS 커밋과 배포는 하고, 맨 끝 emart-check에서 실행을 실패로 끝낸다.
+      # KAMIS 단계가 실패한 날은 여기까지 오지 않고 다음 실행에서 받는다.
+      - name: 이마트 값(참가격) 받기
+        id: emart
+        continue-on-error: true
+        run: uv run python -m collector.emart
+
+      - name: 이마트 파일 바뀌었으면 커밋·푸시
+        if: steps.emart.outcome == 'success'
+        # git diff가 아니라 git status로 본다. 첫 실행에서 data/emart.json은 git이 아직 모르는
+        # 새 파일이라 git diff로는 바뀐 것이 없다고 나온다.
+        run: |
+          if [ -z "$(git status --porcelain -- data/emart.json)" ]; then
+            echo "이마트 파일이 그대로라 커밋하지 않습니다"
+            exit 0
+          fi
+          as_of=$(python3 -c "import json; print(json.load(open('data/emart.json', encoding='utf-8'))['as_of'])")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/emart.json
+          git commit -m "chore(data): 이마트 ${as_of} 값 갱신"
           git pull --rebase
           git push
 
@@ -113,3 +142,14 @@ jobs:
         uses: actions/deploy-pages@v4
         with:
           artifact_name: github-pages-${{ github.run_attempt }}
+
+  # 참가격을 받지 못한 날은 배포까지 마친 뒤 실행을 실패로 끝내 GitHub이 메일로 알리게 한다.
+  emart-check:
+    needs: [collect, deploy]
+    if: always() && needs.collect.outputs.emart == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 이마트 값 확인
+        run: |
+          echo "이마트 값(참가격)을 받지 못했습니다. 기존 data/emart.json은 그대로입니다. collect 작업의 '이마트 값(참가격) 받기' 기록을 보세요."
+          exit 1
