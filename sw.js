@@ -1,9 +1,13 @@
 // 오프라인용 서비스 워커(브라우저가 파일을 폰에 저장해 두는 기능).
-// 화면 파일은 저장해 둔 것을 먼저 쓰고, 가격 파일은 인터넷이 되면 새로 받는다.
+// 화면 파일은 저장해 둔 것을 먼저 쓰고, 가격 파일(KAMIS, 이마트)은 인터넷이 되면 새로 받는다.
 // 화면 파일을 고치면 CACHE 숫자를 올린다. 안 올리면 폰에 옛 화면이 계속 남는다.
 
-const CACHE = "mp-v12";
+const CACHE = "mp-v13";
 const PRICES = "data/prices.json";
+// 이마트 파일은 키를 넣기 전에는 없어서 설치 목록에 넣지 않는다(하나라도 없으면 설치가 통째로 실패한다).
+// 처음 받는 데 성공하면 그때 저장된다.
+const EMART = "data/emart.json";
+const LIVE = [PRICES, EMART];
 // 신호가 약한 매장에서 가격 파일을 이만큼만 기다리고, 넘으면 저장본을 먼저 보여 준다.
 const PRICES_WAIT_MS = 3000;
 const SHELL = [
@@ -37,16 +41,16 @@ self.addEventListener("activate", (event) => {
 
 // 가격 파일: 네트워크 먼저. 받으면 저장본을 바꾼다. 못 받거나(오류 응답 포함)
 // PRICES_WAIT_MS 안에 오지 않으면 저장본을 보여 주고, 늦게 온 응답은 저장만 한다.
-async function pricesFirstFromNetwork(event) {
+async function liveFirstFromNetwork(event, path) {
   const network = fetch(event.request).then(async (response) => {
     if (response.ok) {
       const cache = await caches.open(CACHE);
-      await cache.put(PRICES, response.clone());
+      await cache.put(path, response.clone());
     }
     return response;
   });
   event.waitUntil(network.catch(() => {}));
-  const cached = await caches.match(PRICES);
+  const cached = await caches.match(path);
   if (!cached) return network;
   const timeout = new Promise((resolve) => setTimeout(() => resolve(null), PRICES_WAIT_MS));
   try {
@@ -62,8 +66,9 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
-  if (url.pathname.endsWith(`/${PRICES}`)) {
-    event.respondWith(pricesFirstFromNetwork(event));
+  const live = LIVE.find((path) => url.pathname.endsWith(`/${path}`));
+  if (live) {
+    event.respondWith(liveFirstFromNetwork(event, live));
     return;
   }
   event.respondWith(

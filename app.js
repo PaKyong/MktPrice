@@ -246,17 +246,43 @@ function renderStar(id, name, on) {
   };
 }
 
+// 이마트 상품 상세: 평소 값, 행사 때 최저 값, 최근 3개월 조사일별 대표값.
+function renderEmartDetail(e) {
+  const low = e.low ? pctText(e.low.pct) : null;
+  $("view").append(h("section", { class: "detail" },
+    h("h1", { class: "detail__name" }, e.name),
+    h("p", { class: "detail__meta" }, `이마트 · ${mdot(e.last_day)} 조사 · 이마트 ${e.stores}곳`),
+    h("p", { class: "detail__price" }, won(e.usual), h("span", { class: "detail__unit" }, "평소 값")),
+    e.low
+      ? h("p", { class: "detail__normal down" },
+          `행사 때 ${won(e.low.price)} (${mdot(e.low.day)}) · 평소보다 ${low.text}`)
+      : h("p", { class: "detail__normal muted" }, "3개월 동안 행사 없음"),
+    h("h2", { class: "cat" }, "최근 3개월 조사"),
+    h("ul", { class: "info" }, e.history.map(([day, price]) =>
+      info(mdot(day), day === e.low?.day ? h("span", { class: "down" }, won(price)) : won(price)))),
+    h("p", { class: "detail__foot" },
+      "* 한국소비자원 참가격. 행사 표시가 없어서, 3개월 동안 조사한 이마트 값 중 가장 높은 값을 평소 값으로 봤어요.")));
+}
+
 function renderDetail(id) {
   const view = $("view");
   view.replaceChildren();
   const e = state.byId.get(id);
   const fav = state.favorites.find((x) => x.id === id);
+  // 이마트 항목에는 품목·품종 이름이 없어 displayName을 부르기 전에 가른다.
+  if (e?.emart) {
+    renderStar(id, e.name, Boolean(fav));
+    renderEmartDetail(e);
+    return;
+  }
   const name = e ? displayName(e) : fav?.name || id;
   renderStar(id, name, Boolean(fav));
   if (!e) {
     view.append(h("section", { class: "detail" },
       h("h1", { class: "detail__name" }, name),
-      h("p", { class: "empty" }, "지금 값 없음. 철이 지나 KAMIS 조사 값이 없는 품목이에요.")));
+      h("p", { class: "empty" }, id.startsWith(EMART_ID)
+        ? "지금 값 없음. 최근 3개월 동안 이마트 조사 값이 없는 상품이에요."
+        : "지금 값 없음. 철이 지나 KAMIS 조사 값이 없는 품목이에요.")));
     return;
   }
   const basis = state.data.basis.compare === "전국 대형유통 평균" ? "대형유통" : "조사처";

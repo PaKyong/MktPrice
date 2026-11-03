@@ -13,7 +13,9 @@ def test_deploy_copies_every_offline_file():
     sw = (ROOT / "sw.js").read_text(encoding="utf-8")
     shell = re.search(r"const SHELL = \[(.*?)\];", sw, re.S).group(1)
     prices = re.search(r'const PRICES = "([^"]+)"', sw).group(1)
-    paths = [p for p in re.findall(r'"([^"]+)"', shell) if p != "./"] + [prices]
+    # 이마트 파일은 설치 목록에는 없지만(없는 날이 있다) 받으면 오프라인용으로 저장하므로 배포에 실려야 한다.
+    emart = re.search(r'const EMART = "([^"]+)"', sw).group(1)
+    paths = [p for p in re.findall(r'"([^"]+)"', shell) if p != "./"] + [prices, emart]
 
     workflow = (ROOT / ".github" / "workflows" / "collect.yml").read_text(encoding="utf-8")
     copy_line = next(line for line in workflow.splitlines() if "cp -r" in line and "_site/" in line)
