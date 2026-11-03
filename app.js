@@ -4,10 +4,11 @@
 import { addFavorite, getFavorites, removeFavorite } from "./store.js";
 
 // chip: 전체 품목에서 마지막으로 누른 부류 칸(다시 그려도 칠한 채로 둔다). chipsLeft: 칸 줄을 옆으로 민 위치.
+// filter: "싼 편"·"비싼 편"을 모아 보는 중이면 그 이름, 아니면 null.
 // cameFromApp, homeScroll: 상세로 들어오기 전 화면과 그 화면의 스크롤 위치(←로 돌아갈 때 쓴다).
 // emart: data/emart.json(참가격 이마트 값, 없으면 null), emartItems: 그 상품들을 묶음 순서로, 묶음 안은 상품명 가나다순으로.
 const state = { data: null, emart: null, emartItems: [], byId: new Map(), favorites: [], query: "", chip: null,
-                chipsLeft: 0, cameFromApp: false, homeScroll: 0 };
+                chipsLeft: 0, filter: null, cameFromApp: false, homeScroll: 0 };
 const $ = (id) => document.getElementById(id);
 // 이마트 상품의 id(즐겨찾기 열쇠, 상세 주소)는 상품명 앞에 이것을 붙인다.
 const EMART_ID = "이마트:";
@@ -203,15 +204,45 @@ function renderHome() {
     if (!byCategory.has(c)) byCategory.set(c, []);
     byCategory.get(c).push(e);
   }
+  // 칸 줄 맨 앞의 "싼 편", "비싼 편": 누르면 그 품목들만 모아 본다(첫 화면 길이는 그대로).
+  const filters = signalLists();
+  const blocks = state.filter && filters.has(state.filter)
+    ? [[state.filter, filters.get(state.filter),
+        `${state.filter} · 평년보다 ${Math.round(state.data.threshold_pct)}% 이상 ${state.filter === "싼 편" ? "싸요" : "비싸요"}`]]
+    : [...byCategory].map(([c, list]) => [c, list, c]);
+  const chip = (c, count, onclick) =>
+    h("button", { type: "button", class: c === state.chip || c === state.filter ? "chip chip--on" : "chip",
+                  "data-category": c, onclick }, `${c} ${count}`);
   view.append(h("section", { class: "section" },
     h("h2", { class: "sec" }, "전체 품목"),
-    h("nav", { class: "chips", "aria-label": "부류" }, [...byCategory].map(([c, list]) =>
-      h("button", { type: "button", class: c === state.chip ? "chip chip--on" : "chip", "data-category": c,
-                    onclick: () => jumpTo(c) }, `${c} ${list.length}`))),
-    [...byCategory].map(([c, list]) => h("section", { class: "cat-block", id: `cat-${c}`, "data-category": c },
-      h("h3", { class: "cat" }, c), h("ul", { class: "rows" }, list.map((e) => itemRow(e, false, true)))))));
+    h("nav", { class: "chips", "aria-label": "부류" },
+      [...filters].map(([c, list]) => chip(c, list.length, () => toggleFilter(c))),
+      [...byCategory].map(([c, list]) => chip(c, list.length, () => jumpTo(c)))),
+    blocks.map(([c, list, title]) => h("section", { class: "cat-block", id: `cat-${c}`, "data-category": c },
+      h("h3", { class: "cat" }, title), h("ul", { class: "rows" }, list.map((e) => itemRow(e, false, true)))))));
   // 다시 그려도, 상세에 갔다 와도 옆으로 밀어 둔 부류 칸 줄 위치를 그대로 둔다(render가 지우기 전에 적어 둔다).
   view.querySelector(".chips").scrollLeft = state.chipsLeft;
+}
+
+// 신호가 "싼 편"·"비싼 편"인 KAMIS 품종. 평년 대비 차이가 큰 것부터. 없는 쪽은 칸을 두지 않는다.
+function signalLists() {
+  const lists = new Map();
+  for (const [signal, sign] of [["싼 편", 1], ["비싼 편", -1]]) {
+    const list = state.data.items.filter((e) => e.signal === signal)
+      .sort((a, b) => sign * (a.change.normal - b.change.normal));
+    if (list.length) lists.set(signal, list);
+  }
+  return lists;
+}
+
+// "싼 편"·"비싼 편" 칸: 누르면 그 품목들만 모아 보고, 다시 누르면 전체로 돌아온다. 목록 맨 위로 간다.
+function toggleFilter(name) {
+  $("search").blur();
+  state.filter = state.filter === name ? null : name;
+  state.chip = state.filter;
+  render();
+  const first = $("view").querySelector(".cat-block");
+  window.scrollTo(0, first.getBoundingClientRect().top + window.scrollY - coveredHeight());
 }
 
 // 위에 붙은 막대와 부류 칸 줄의 높이. 그 아래부터가 목록이 보이는 자리다.
@@ -222,7 +253,8 @@ function markChip(category) {
   state.chip = category;
   const chips = document.querySelector(".chips");
   for (const chip of chips.children) {
-    const on = chip.dataset.category === category;
+    // 모아 보기 중에는 그 칸을 늘 칠해 둔다(목록 위로 올려도 모아 보는 중인 것을 알게).
+    const on = chip.dataset.category === category || chip.dataset.category === state.filter;
     chip.classList.toggle("chip--on", on);
     if (on && (chip.offsetLeft < chips.scrollLeft
                || chip.offsetLeft + chip.offsetWidth > chips.scrollLeft + chips.clientWidth)) {
@@ -234,6 +266,11 @@ function markChip(category) {
 // 부류 칸을 누르면 그 부류로 건너뛰고 칸을 칠한다. 위에 붙은 막대와 칸 줄에 가리지 않게 그만큼 덜 내린다.
 function jumpTo(category) {
   $("search").blur();
+  // 싼 편·비싼 편을 모아 보던 중이면 전체 목록으로 돌아온 뒤 건너뛴다.
+  if (state.filter) {
+    state.filter = null;
+    render();
+  }
   markChip(category);
   const section = document.getElementById(`cat-${category}`);
   window.scrollTo(0, section.getBoundingClientRect().top + window.scrollY - coveredHeight());
@@ -351,6 +388,46 @@ function renderStar(id, name, on) {
   };
 }
 
+// 상세 화면의 가격표 값 칸. 숫자를 치는 대로 judge(값)이 낸 한 마디 판정을 아래에 보인다. 저장하지 않는다.
+function priceTagBox(placeholder, judge) {
+  const result = h("p", { class: "judge__result", "aria-live": "polite" });
+  const input = h("input", { type: "text", inputmode: "numeric", placeholder, autocomplete: "off",
+                             "aria-label": "가격표 값", enterkeyhint: "done" });
+  input.addEventListener("input", () => {
+    const v = Number(input.value.replace(/[^0-9]/g, ""));
+    const verdict = v > 0 ? judge(v) : null;
+    result.className = `judge__result ${verdict?.cls ?? ""}`;
+    result.textContent = verdict?.text ?? "";
+  });
+  return h("form", { class: "judge", onsubmit: (ev) => { ev.preventDefault(); input.blur(); } },
+    h("label", { class: "judge__label" }, h("span", {}, "가격표 값"), input, h("span", {}, "원")), result);
+}
+
+// KAMIS 품종: 가격표의 단위 가격을 대형유통 평균과 가게 가운데 절반 범위에 견준다.
+function judgeKamis(e) {
+  const [lo, hi] = e.unit_range;
+  const range = `가게 가운데 절반(${lo.toLocaleString("ko-KR")}~${won(hi)})`;
+  return (v) => {
+    const pct = Math.round(((v - e.unit_price) / e.unit_price) * 100);
+    const avg = pct > 0 ? `평균보다 ${pct}% 비싸요` : pct < 0 ? `평균보다 ${-pct}% 싸요` : "평균과 같아요";
+    const where = v > hi ? `${range}보다 비쌈` : v < lo ? `${range}보다 쌈` : `${range} 안`;
+    return { text: `${avg} · ${where}`, cls: pct > 0 ? "up" : pct < 0 ? "down" : "" };
+  };
+}
+
+// 이마트 상품: 가격표의 묶음 값을 평소 값과 행사 때 최저 값에 견준다.
+function judgeEmart(e) {
+  const low = e.low?.price;
+  return (v) => {
+    if (v > e.usual) return { text: `평소 값보다 ${won(v - e.usual)} 비싸요`, cls: "up" };
+    if (v === e.usual) return { text: "평소 값이에요", cls: "" };
+    if (low && v === low) return { text: "행사 때 최저 값이에요", cls: "down" };
+    if (low && v < low) return { text: `행사 때 최저(${won(low)})보다도 ${won(low - v)} 싸요`, cls: "down" };
+    return { text: `평소 값보다 ${won(e.usual - v)} 싸요${low ? ` · 행사 때 최저(${won(low)})보다는 비쌈` : ""}`,
+             cls: "down" };
+  };
+}
+
 // 이마트 상품 상세: 평소 값, 행사 때 최저 값, 최근 3개월 조사일별 대표값.
 function renderEmartDetail(e) {
   const low = e.low ? pctText(e.low.pct) : null;
@@ -363,6 +440,7 @@ function renderEmartDetail(e) {
       ? h("p", { class: "detail__normal down" },
           `행사 때 ${won(e.low.price)} (${mdot(e.low.day)}) · 평소보다 ${low.text}`)
       : h("p", { class: "detail__normal muted" }, "3개월 동안 행사 없음"),
+    priceTagBox("묶음 값", judgeEmart(e)),
     h("h2", { class: "cat" }, "최근 3개월 조사"),
     h("ul", { class: "info" }, e.history.map(([day, price]) =>
       info(mdot(day), day === e.low?.day ? h("span", { class: "down" }, won(price)) : won(price)))),
@@ -407,6 +485,7 @@ function renderDetail(id) {
       ? h("p", { class: "detail__normal" }, "평년보다 ", h("span", { class: normal.cls }, normal.text),
           e.signal ? ` · ${e.signal}` : null)
       : h("p", { class: "detail__normal muted" }, "평년 값 없음"),
+    priceTagBox(`${perUnit(e)} 값`, judgeKamis(e)),
     e.trend.length
       ? [trendChart(e.trend), h("p", { class: "chart-cap" }, `30일 · ${e.unit} 기준`)]
       : h("p", { class: "muted" }, "추이 값이 없어요"),

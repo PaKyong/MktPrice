@@ -181,3 +181,13 @@ button, input { font: inherit; color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   * { scroll-behavior: auto !important; }
 }
+
+/* ---- 상세의 가격표 값 칸과 판정 ---- */
+
+.judge { margin: 10px 0 14px; }
+.judge__label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 15px; }
+.judge__label input { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border: 0; border-radius: 12px;
+  background: var(--soft); color: var(--text); font-size: 16px; text-align: right; }
+.judge__label input::placeholder { color: var(--muted); }
+.judge__result { margin: 6px 0 0; font-size: 15px; font-weight: 700; }
+.judge__result:empty { display: none; }
