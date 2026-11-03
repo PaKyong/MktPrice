@@ -1,10 +1,11 @@
 // 장보기 가격 화면: 첫 화면(즐겨찾기, 전체 품목), 검색, 상세.
 // 가격 계산은 수집 스크립트가 끝내 두었고, 여기서는 보여 주기만 한다.
 
-import { getFavorites } from "./store.js";
+import { addFavorite, getFavorites, removeFavorite } from "./store.js";
 
 // chip: 전체 품목에서 마지막으로 누른 부류 칸(다시 그려도 칠한 채로 둔다).
-const state = { data: null, byId: new Map(), favorites: [], query: "", chip: null };
+// cameFromApp, homeScroll: 상세로 들어오기 전 화면과 그 화면의 스크롤 위치(←로 돌아갈 때 쓴다).
+const state = { data: null, byId: new Map(), favorites: [], query: "", chip: null, cameFromApp: false, homeScroll: 0 };
 const $ = (id) => document.getElementById(id);
 
 // ---- 글자 만들기 ----
@@ -14,11 +15,9 @@ const md = (iso) => {
   const [, m, d] = iso.split("-");
   return `${Number(m)}월 ${Number(d)}일`;
 };
-const signedPct = (x) => `${x > 0 ? "+" : x < 0 ? "-" : ""}${Math.abs(Math.round(x))}%`;
 // 품종 이름에 품목 이름이 들어 있으면 품종 이름만 쓴다("양파 · 양파" → "양파", "파 · 대파" → "대파").
 const displayName = (e) => (e.kind.includes(e.item) ? e.kind : `${e.item} ${e.kind}`);
 const perUnit = (e) => (e.measure === "weight" ? "100g당" : `1${e.unit_label}당`);
-const signalClass = { "비싼 편": "sig--high", "보통": "sig--mid", "싼 편": "sig--low" };
 
 // 평년 대비 같은 %: 내리면 빨강 ▼, 오르면 파랑 ▲. 반올림해 0이면 흐린 0%, 값이 없으면 흐린 -.
 function pctText(x) {
@@ -26,12 +25,6 @@ function pctText(x) {
   const r = Math.round(x);
   if (r === 0) return { text: "0%", cls: "muted" };
   return r < 0 ? { text: `▼${-r}%`, cls: "down" } : { text: `▲${r}%`, cls: "up" };
-}
-
-function normalText(pct) {
-  const r = Math.round(pct);
-  if (r === 0) return "평년과 비슷";
-  return r > 0 ? `평년보다 ${r}% 비쌈` : `평년보다 ${-r}% 쌈`;
 }
 
 // 작은 요소 만들기 도우미. 글자는 textContent로만 넣는다.
@@ -199,44 +192,67 @@ function trendChart(trend) {
   return svg;
 }
 
-// 왼쪽 글자와 오른쪽 값을 한 줄에 놓는다.
-const pair = (cls, left, right) => h("p", { class: cls }, h("span", {}, left), right);
+// 상세 정보 줄: 왼쪽 흐린 이름, 오른쪽 값.
+const info = (label, value) => h("li", { class: "info__row" }, h("span", {}, label), h("span", {}, value));
+
+// 상세 위 막대의 ☆/★. 누르면 즐겨찾기에 넣거나 뺀다.
+function renderStar(id, name, on) {
+  const star = $("star");
+  star.textContent = on ? "★" : "☆";
+  star.setAttribute("aria-pressed", String(on));
+  star.setAttribute("aria-label", on ? "즐겨찾기에서 빼기" : "즐겨찾기에 넣기");
+  star.onclick = async () => {
+    if (on) await removeFavorite(id);
+    else await addFavorite(id, name);
+    await refresh();
+  };
+}
 
 function renderDetail(id) {
   const view = $("view");
   view.replaceChildren();
   const e = state.byId.get(id);
   const fav = state.favorites.find((x) => x.id === id);
+  const name = e ? displayName(e) : fav?.name || id;
+  renderStar(id, name, Boolean(fav));
   if (!e) {
     view.append(h("section", { class: "detail" },
-      h("h2", { class: "detail__name" }, fav?.name || id),
+      h("h1", { class: "detail__name" }, name),
       h("p", { class: "empty" }, "지금 값 없음. 철이 지나 KAMIS 조사 값이 없는 품목이에요.")));
     return;
   }
   const basis = state.data.basis.compare === "전국 대형유통 평균" ? "대형유통" : "조사처";
   const num = (n) => n.toLocaleString("ko-KR");
+  const normal = pctText(e.change.normal);
   const changes = [["1주 전보다", e.change.week], ["1개월 전보다", e.change.month], ["1년 전보다", e.change.year]]
     .filter(([, v]) => v !== null);
-  const pctClass = (v) => (v > 0 ? "sig--high" : v < 0 ? "sig--low" : "");
   view.append(h("section", { class: "detail" },
-    h("div", { class: "detail__head" },
-      h("h2", { class: "detail__name" }, displayName(e)), h("span", { class: "muted" }, e.category)),
-    h("p", { class: "detail__meta" }, `${e.as_of.replaceAll("-", ".")} · ${basis} ${e.stores}곳 평균`),
-    h("div", { class: "dl" }),
-    h("p", { class: "detail__price" }, h("span", {}, perUnit(e)), h("strong", {}, won(e.unit_price))),
-    pair("detail__row muted", e.unit, h("span", {}, won(e.price))),
-    pair("detail__row muted", "가게마다(가운데 절반)",
-      h("span", {}, `${num(e.unit_range[0])}~${num(e.unit_range[1])}/${e.unit_label}`)),
-    h("div", { class: "dl" }),
-    pair("detail__row", "30일 추이", h("span", { class: "muted" }, `${e.unit} 기준`)),
-    e.trend.length ? trendChart(e.trend) : h("p", { class: "muted" }, "추이 값이 없어요"),
-    h("div", { class: "dl" }),
+    h("h1", { class: "detail__name" }, name),
+    h("p", { class: "detail__meta" },
+      `${e.category} · ${e.as_of.slice(5).replace("-", ".")} 기준 · ${basis} ${e.stores}곳 평균`),
+    h("p", { class: "detail__price" }, won(e.unit_price), h("span", { class: "detail__unit" }, `/${e.unit_label}`)),
     e.change.normal !== null
-      ? h("p", { class: "stamp-wrap" },
-          h("span", { class: `stamp ${signalClass[e.signal] || "sig--mid"}` }, normalText(e.change.normal)))
-      : h("p", { class: "muted" }, "평년 값이 없어요"),
-    changes.map(([label, v]) => pair("detail__row", label, h("span", { class: pctClass(v) }, signedPct(v)))),
-    h("p", { class: "detail__foot" }, "* 요즘 시기는 KAMIS 전체 평균 기준")));
+      ? h("p", { class: "detail__normal" }, "평년보다 ", h("span", { class: normal.cls }, normal.text),
+          e.signal ? ` · ${e.signal}` : null)
+      : h("p", { class: "detail__normal muted" }, "평년 값 없음"),
+    e.trend.length
+      ? [trendChart(e.trend), h("p", { class: "chart-cap" }, `30일 · ${e.unit} 기준`)]
+      : h("p", { class: "muted" }, "추이 값이 없어요"),
+    h("ul", { class: "info" },
+      info(e.unit, won(e.price)),
+      info("가게마다(가운데 절반)", `${num(e.unit_range[0])}~${num(e.unit_range[1])}/${e.unit_label}`),
+      changes.map(([label, v]) => {
+        const p = pctText(v);
+        return info(label, h("span", { class: p.cls }, p.text));
+      })),
+    h("p", { class: "detail__foot" }, "* 평년·지난 값 비교는 KAMIS 전체 평균 기준")));
+}
+
+// ←: 앱 안에서 들어왔으면 브라우저 뒤로 가기(검색어와 보던 자리가 그대로 남는다).
+// 상세 주소로 바로 열었으면 뒤로 가면 앱 밖으로 나가므로 첫 화면으로 간다.
+function goBack() {
+  if (state.cameFromApp) history.back();
+  else location.hash = "#/";
 }
 
 // ---- 화면 고르기 ----
@@ -245,6 +261,8 @@ function render() {
   if (!state.data) return;
   renderTop();
   const match = location.hash.match(/^#\/item\/(.+)$/);
+  $("bar-home").hidden = Boolean(match);
+  $("bar-detail").hidden = !match;
   $("home-head").hidden = Boolean(match);
   $("search-clear").hidden = !state.query;
   if (match) renderDetail(decodeURIComponent(match[1]));
@@ -312,8 +330,7 @@ async function init() {
   }
   $("search").addEventListener("input", (ev) => {
     state.query = ev.target.value.trim();
-    if (location.hash.startsWith("#/item/")) location.hash = "#/";
-    else render();
+    render();
   });
   $("search-form").addEventListener("submit", (ev) => {
     ev.preventDefault();
@@ -330,9 +347,23 @@ async function init() {
   window.addEventListener("touchmove", () => {
     if (document.activeElement === $("search")) $("search").blur();
   }, { passive: true });
-  window.addEventListener("hashchange", () => {
+  $("back").addEventListener("click", goBack);
+  // 상세로 들어갈 때 보던 자리를 적어 두고, 돌아오면 그 자리로 내린다(다시 그리므로 브라우저에 맡기지 않는다).
+  history.scrollRestoration = "manual";
+  window.addEventListener("hashchange", (ev) => {
+    const toDetail = location.hash.startsWith("#/item/");
+    const fromDetail = new URL(ev.oldURL).hash.startsWith("#/item/");
+    if (toDetail && !fromDetail) {
+      state.homeScroll = window.scrollY;
+      state.cameFromApp = true;
+    }
     render();
-    window.scrollTo(0, 0);
+    if (toDetail) {
+      window.scrollTo(0, 0);
+    } else if (fromDetail) {
+      window.scrollTo(0, state.homeScroll);
+      state.cameFromApp = false;
+    }
   });
   window.addEventListener("online", render);
   window.addEventListener("offline", render);

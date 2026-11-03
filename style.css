@@ -64,6 +64,9 @@ button, input { font: inherit; color: inherit; }
   background: var(--bg);
 }
 .bar[hidden] { display: none; }
+.bar--detail { display: flex; align-items: center; justify-content: space-between; padding-left: 4px; padding-right: 4px; }
+.icon-btn { width: 44px; height: 44px; border: 0; background: none; color: var(--text); font-size: 24px;
+  line-height: 1; cursor: pointer; }
 
 .search { position: relative; }
 .search input {
@@ -144,6 +147,21 @@ button, input { font: inherit; color: inherit; }
 .spark polyline { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
 
 /* ---- 상세 ---- */
+
+.detail { padding-top: 4px; }
+.detail__name { margin: 0; font-size: 20px; font-weight: 700; line-height: 1.35; }
+.detail__meta { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.detail__price { margin: 18px 0 0; font-size: 30px; font-weight: 700; line-height: 1.2; }
+.detail__unit { margin-left: 4px; color: var(--muted); font-size: 15px; font-weight: 400; }
+.detail__normal { margin: 4px 0 8px; font-size: 15px; }
+.chart-cap { margin: 2px 0 12px; color: var(--muted); font-size: 12px; text-align: right; }
+.info { list-style: none; margin: 0; padding: 0; }
+.info__row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line);
+  font-size: 15px; }
+.info__row:last-child { border-bottom: 0; }
+.info__row > span:first-child { color: var(--muted); }
+.info__row > span:last-child { white-space: nowrap; }
+.detail__foot { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
 
 .chart { display: block; width: 100%; height: auto; margin-top: 6px; }
 .chart__base { stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 4 3; }
