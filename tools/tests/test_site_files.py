@@ -37,3 +37,17 @@ def test_slow_emart_step_cannot_block_kamis_deploy():
     step_limit = int(re.search(r"timeout-minutes: (\d+)", step).group(1))
     # KAMIS 몫(보통 몇 분)을 넉넉히 남긴다.
     assert job_limit - step_limit >= 20
+
+
+def test_failed_emart_commit_cannot_block_kamis_deploy():
+    """이마트 커밋 단계가 실패해도(받아 오기·푸시 거절 등) 작업이 실패로 끝나 배포가 빠지면 안 된다.
+
+    그 단계도 continue-on-error로 두고, 실패했으면 맨 끝 emart-check가 실행을 실패로 끝낸다(메일).
+    """
+    workflow = (ROOT / ".github" / "workflows" / "collect.yml").read_text(encoding="utf-8")
+    step = re.search(r"^      - name: 이마트 파일 바뀌었으면 커밋·푸시\n((?:        .*\n|\s*#.*\n)*)", workflow, re.M).group(1)
+    assert "continue-on-error: true" in step
+    step_id = re.search(r"id: (\S+)", step).group(1)
+    output = re.search(rf"^      (\S+): \$\{{\{{ steps\.{step_id}\.outcome \}}\}}", workflow, re.M).group(1)
+    check = re.search(r"^  emart-check:\n((?:    .*\n)*)", workflow, re.M).group(1)
+    assert f"needs.collect.outputs.{output} == 'failure'" in check

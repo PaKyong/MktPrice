@@ -30,9 +30,10 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: write
-    # 맨 끝 emart-check가 참가격 단계의 결과를 본다.
+    # 맨 끝 emart-check가 참가격 단계와 그 커밋 단계의 결과를 본다.
     outputs:
       emart: ${{ steps.emart.outcome }}
+      emart_commit: ${{ steps.emart_commit.outcome }}
     env:
       KAMIS_CERT_KEY: ${{ secrets.KAMIS_CERT_KEY }}
       KAMIS_CERT_ID: ${{ secrets.KAMIS_CERT_ID }}
@@ -98,7 +99,11 @@ jobs:
         run: uv run python -m collector.emart
 
       - name: 이마트 파일 바뀌었으면 커밋·푸시
+        id: emart_commit
         if: steps.emart.outcome == 'success'
+        # 받아 오기나 푸시가 거절돼도 작업이 실패로 끝나면 배포(그날 KAMIS 가격)까지 빠지므로 넘어가고,
+        # 맨 끝 emart-check에서 실행을 실패로 끝낸다.
+        continue-on-error: true
         # git diff가 아니라 git status로 본다. 첫 실행에서 data/emart.json은 git이 아직 모르는
         # 새 파일이라 git diff로는 바뀐 것이 없다고 나온다.
         run: |
@@ -147,13 +152,13 @@ jobs:
         with:
           artifact_name: github-pages-${{ github.run_attempt }}
 
-  # 참가격을 받지 못한 날은 배포까지 마친 뒤 실행을 실패로 끝내 GitHub이 메일로 알리게 한다.
+  # 참가격을 받지 못했거나 커밋하지 못한 날은 배포까지 마친 뒤 실행을 실패로 끝내 GitHub이 메일로 알리게 한다.
   emart-check:
     needs: [collect, deploy]
-    if: always() && needs.collect.outputs.emart == 'failure'
+    if: always() && (needs.collect.outputs.emart == 'failure' || needs.collect.outputs.emart_commit == 'failure')
     runs-on: ubuntu-latest
     steps:
       - name: 이마트 값 확인
         run: |
-          echo "이마트 값(참가격)을 받지 못했습니다. 기존 data/emart.json은 그대로입니다. collect 작업의 '이마트 값(참가격) 받기' 기록을 보세요."
+          echo "이마트 값(참가격)을 받거나 커밋하지 못했습니다. 사이트의 data/emart.json은 그대로입니다. collect 작업의 '이마트 값(참가격) 받기'와 '이마트 파일 바뀌었으면 커밋·푸시' 기록을 보세요."
           exit 1
