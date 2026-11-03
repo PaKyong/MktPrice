@@ -13,10 +13,21 @@ const md = (iso) => {
   const [, m, d] = iso.split("-");
   return `${Number(m)}월 ${Number(d)}일`;
 };
-const signedPct = (x) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs(Math.round(x))}%`;
-const nameOf = (e) => `${e.item} · ${e.kind}`;
+const signedPct = (x) => `${x > 0 ? "+" : x < 0 ? "-" : ""}${Math.abs(Math.round(x))}%`;
+// 품종 이름에 품목 이름이 들어 있으면 품종 이름만 쓴다("양파 · 양파" → "양파", "파 · 대파" → "대파").
+const displayName = (e) => (e.kind.includes(e.item) ? e.kind : `${e.item} ${e.kind}`);
 const perUnit = (e) => (e.measure === "weight" ? "100g당" : `1${e.unit_label}당`);
+// 영수증 줄의 단위 가격: "1,267/100g", "1,709/개"
+const unitPriceText = (e) => `${e.unit_price.toLocaleString("ko-KR")}/${e.unit_label}`;
 const signalClass = { "비싼 편": "sig--high", "보통": "sig--mid", "싼 편": "sig--low" };
+const signalMark = { "비싼 편": "▲ ", "싼 편": "▼ ", "보통": "" };
+
+// 품목 줄 둘째 줄의 신호: "▲ 비싼 편 +19%", "보통 +4%". 평년 값이 없으면 신호 말만.
+function signalLine(e) {
+  if (!e.signal) return null;
+  const pct = e.change.normal !== null ? ` ${signedPct(e.change.normal)}` : "";
+  return { text: `${signalMark[e.signal] ?? ""}${e.signal}${pct}`, cls: signalClass[e.signal] || "sig--mid" };
+}
 
 function normalText(pct) {
   const r = Math.round(pct);
@@ -42,15 +53,15 @@ function h(tag, attrs = {}, ...children) {
 
 const signalChip = (e) => (e.signal ? h("span", { class: `sig ${signalClass[e.signal]}` }, e.signal) : null);
 
-// ---- 맨 위 띠와 기준일 ----
+// ---- 영수증 머리 ----
 
 function renderTop() {
   const { data } = state;
-  $("asof").textContent = `${md(data.as_of)} 기준 · 출처 ${data.source}`;
-  $("banner-sample").hidden = data.source !== "샘플";
-  const offline = $("banner-offline");
+  $("asof").textContent = `${data.as_of.replaceAll("-", ".")} 기준 · 출처 ${data.source}`;
+  $("print-sample").hidden = data.source !== "샘플";
+  const offline = $("print-offline");
   offline.hidden = navigator.onLine;
-  offline.textContent = `인터넷 연결 없음 · ${md(data.as_of)} 값`;
+  offline.textContent = `* 인터넷 연결 없음 · ${md(data.as_of)} 값 *`;
 }
 
 // ---- 내 목록 ----
@@ -59,34 +70,41 @@ function renderList() {
   const view = $("view");
   view.replaceChildren();
   if (!state.list.length) {
-    view.append(h("p", { class: "empty" }, "아래 검색창에서 품목을 찾아 ＋ 담기를 눌러 보세요"));
+    view.append(h("p", { class: "empty" }, "아래 검색창에서 품목을 찾아 + 담기를 눌러 보세요"));
     return;
   }
+  // 영수증 품목 줄: 첫 줄에 이름과 단위 가격, 들여 쓴 둘째 줄에 신호와 평년 대비 %.
   const rows = state.list.map((entry) => {
     const e = state.byId.get(entry.id);
-    const qty = entry.qty >= 2 ? h("span", { class: "row__qty" }, `×${entry.qty}`) : null;
+    const qty = entry.qty >= 2 ? ` x${entry.qty}` : "";
+    const line = (name, price) => h("span", { class: "item__line" },
+      h("span", { class: "item__name" }, name), h("span", { class: "item__price" }, price));
     if (!e) {
       return h("li", {},
-        h("a", { class: "row row--gone", href: `#/item/${entry.id}` },
-          h("span", { class: "row__name" }, entry.name || entry.id, qty),
-          h("span", { class: "row__price" }, "지금 값 없음")));
+        h("a", { class: "item", href: `#/item/${entry.id}` },
+          line(`${entry.name || entry.id}${qty}`, "-"),
+          h("span", { class: "item__sig" }, "지금 값 없음")));
     }
-    const stale = e.as_of !== state.data.as_of ? h("span", { class: "row__stale" }, `${md(e.as_of)} 값`) : null;
+    const sig = signalLine(e);
+    const stale = e.as_of !== state.data.as_of ? `${sig ? " · " : ""}${md(e.as_of)} 값` : "";
     return h("li", {},
-      h("a", { class: "row", href: `#/item/${e.id}` },
-        h("span", { class: "row__name" }, nameOf(e), qty, stale),
-        h("span", { class: "row__price" },
-          h("span", { class: "row__unit" }, perUnit(e)), " ", won(e.unit_price)),
-        signalChip(e)));
+      h("a", { class: "item", href: `#/item/${e.id}` },
+        line(`${displayName(e)}${qty}`, unitPriceText(e)),
+        sig || stale
+          ? h("span", { class: "item__sig" },
+              sig ? h("span", { class: sig.cls }, sig.text) : null,
+              stale ? h("span", { class: "muted" }, stale) : null)
+          : null));
   });
-  view.append(h("ul", { class: "rows" }, rows));
+  view.append(h("ul", { class: "items" }, rows));
 }
 
-function renderTotal() {
+// 합계는 검색 중에도 보이고, 상세 화면에서는 숨긴다.
+function renderTotal(detail) {
   const total = $("total");
   const priced = state.list.filter((x) => state.byId.has(x.id));
   const missing = state.list.length - priced.length;
-  if (!state.list.length || state.query) {
+  if (!state.list.length || detail) {
     total.hidden = true;
     return;
   }
@@ -98,7 +116,7 @@ function renderTotal() {
     high += e.range[1] * x.qty;
   }
   total.replaceChildren(...[
-    h("span", { class: "total__label" }, "예상 총액"),
+    h("span", { class: "total__label" }, "합계(예상)"),
     h("strong", { class: "total__value" }, priced.length ? `${low.toLocaleString("ko-KR")}~${won(high)}` : "—"),
     missing ? h("span", { class: "total__note" }, `값 없는 품목 ${missing}개 제외`) : null,
   ].filter(Boolean));
@@ -135,7 +153,7 @@ function renderSearch() {
           type: "button", class: added ? "add add--done" : "add", "aria-pressed": added ? "true" : "false",
           onclick: async () => {
             if (!added) {
-              await addItem(e.id, nameOf(e));
+              await addItem(e.id, displayName(e));
               await refresh();
             }
           },
@@ -193,7 +211,7 @@ function renderDetail(id) {
     .join(" · ");
   view.append(h("section", { class: "detail" },
     h("div", { class: "detail__head" },
-      h("h2", { class: "detail__name" }, nameOf(e)), signalChip(e)),
+      h("h2", { class: "detail__name" }, displayName(e)), signalChip(e)),
     h("p", { class: "detail__meta" }, `${e.category} · ${md(e.as_of)} 기준`),
     h("div", { class: "tag" },
       h("span", { class: "tag__unit" }, perUnit(e)),
@@ -230,7 +248,7 @@ function renderDetailDock(id, entry, e) {
   } else {
     dock.replaceChildren(h("div", { class: "dock__row" },
       h("button", { type: "button", class: "btn",
-                    onclick: async () => { await addItem(id, e ? nameOf(e) : id); await refresh(); } }, "＋ 담기"),
+                    onclick: async () => { await addItem(id, e ? displayName(e) : id); await refresh(); } }, "＋ 담기"),
       back));
   }
 }
@@ -255,7 +273,7 @@ function render() {
   if (detail) renderDetail(decodeURIComponent(match[1]));
   else if (state.query) renderSearch();
   else renderList();
-  renderTotal();
+  renderTotal(detail);
 }
 
 async function refresh() {
