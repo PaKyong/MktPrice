@@ -33,6 +33,7 @@ def test_parse_category_accepts_underscored_code_names() -> None:
         "rank": "상품", "unit": "10개", "day1": "당일 (11/02)", "dpr1": "32,000"}]}}
     [row] = parse_category(raw, "400", date(2026, 11, 2))
     assert (row.item_code, row.kind_code) == ("411", "05")
+    assert row.rank_code == ""
 
 
 def test_parse_category_skips_broken_row_and_accepts_single_item_dict() -> None:
@@ -75,12 +76,13 @@ def test_is_large_retail(market: str, expected: bool) -> None:
 def test_parse_category_success() -> None:
     raw = {"data": {"error_code": "000", "item": [{
         "item_name": "사과", "itemcode": "411", "kind_name": "홍로", "kindcode": "05",
-        "rank": "상품", "unit": "10개", "day1": "당일 (11/02)", "dpr1": "32,000",
+        "rank": "상품", "rank_code": "04", "unit": "10개", "day1": "당일 (11/02)", "dpr1": "32,000",
         "day3": "1주일전 (10/26)", "dpr3": "31,000", "day5": "1개월전 (10/02)", "dpr5": "-",
         "day6": "1년전 (11/02)", "dpr6": "28,500", "day7": "평년", "dpr7": "27,100"}]}}
     [row] = parse_category(raw, "400", date(2026, 11, 2))
     assert (row.category_code, row.item_name, row.kind_name) == ("400", "사과", "홍로")
     assert (row.item_code, row.kind_code, row.rank, row.unit) == ("411", "05", "상품", "10개")
+    assert row.rank_code == "04"
     assert row.as_of == date(2026, 11, 2)
     assert (row.today, row.week_ago, row.month_ago, row.year_ago, row.normal) == (
         32000, 31000, None, 28500, 27100)

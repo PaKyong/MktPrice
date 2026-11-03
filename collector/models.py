@@ -70,6 +70,7 @@ class OverallRow:
         month_ago: 1개월 전 값.
         year_ago: 1년 전 값.
         normal: 평년 값.
+        rank_code: 등급 번호(예: 상품 "04", 수산물 등급 없음 "30", 中 "21"). 응답에 없으면 빈 글자.
     """
 
     category_code: str
@@ -85,6 +86,7 @@ class OverallRow:
     month_ago: Optional[int]
     year_ago: Optional[int]
     normal: Optional[int]
+    rank_code: str = ""
 
 
 @dataclass(frozen=True)

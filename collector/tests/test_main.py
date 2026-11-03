@@ -217,3 +217,21 @@ def test_run_steps_back_when_only_unused_rows_have_values_today(tmp_path: Path) 
     src = LivestockOnlyTodaySource(sample_source(tmp_path, date(2026, 11, 2)), last_day=date(2026, 11, 2))
     assert run(src, ITEMS, out, date(2026, 11, 3)) == "updated"
     assert read(out)["as_of"] == "2026-11-02"
+
+
+class RankCodeSource(FailingSource):
+    """전체 평균 줄의 등급 번호만 바꾼다(품종 목록의 등급과 다른 줄을 흉내 낸다)."""
+
+    def category(self, category_code: str, day: date) -> Dict[str, Any]:
+        raw = json.loads(json.dumps(self.inner.category(category_code, day)))
+        if isinstance(raw.get("data"), dict):
+            for row in raw["data"]["item"]:
+                row["rank_code"] = "99"
+        return raw
+
+
+def test_run_matches_overall_rows_by_grade_code(tmp_path: Path) -> None:
+    # 수산물처럼 등급 이름이 "상품"이 아닌 품종도 있어, 품종 목록의 등급 번호로 전체 평균 줄을 고른다.
+    with pytest.raises(CollectError, match="값이 없어"):
+        run(RankCodeSource(sample_source(tmp_path, date(2026, 11, 2))), ITEMS, tmp_path / "prices.json",
+            date(2026, 11, 3))

@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from zoneinfo import ZoneInfo
 
 from collector.compute import LARGE_ONLY, THRESHOLD_PCT, WINDOW_DAYS, build_entry
-from collector.items import ITEMS_PATH, TOP_RANK, load_items
+from collector.items import ITEMS_PATH, load_items
 from collector.kamis import LOOKBACK_DAYS, SAMPLE_DIR, Source, latest_overall, make_source
 from collector.models import CATEGORIES, Item, OverallRow
 from collector.output import (
@@ -37,13 +37,19 @@ def _collect_overall(source: Source, items: List[Item], today: date
                      ) -> Tuple[Dict[Tuple[str, str], OverallRow], Dict[str, str], List[str]]:
     """가장 최근 조사일의 전체 평균에서 품종별 상품 줄, 실패한 부류(부류 → 이유), 날마다의 응답 모양을 돌려준다.
 
-    품종 목록에 있는 상품 줄에 값이 있는 날을 찾는다(축산물처럼 쓰지 않는 줄의 값은 보지 않는다).
+    품종 목록에 있는 줄(품목·품종 코드와 등급 번호가 같은 줄)에 값이 있는 날을 찾는다.
+    축산물처럼 쓰지 않는 줄의 값은 보지 않는다. 수산물은 등급 이름이 "상품"이 아니라서
+    등급 이름 대신 등급 번호로 고른다.
     """
-    wanted = {(item.item_code, item.kind_code) for item in items}
-    rows, failed, tried = latest_overall(
-        source, today, lambda row: row.rank == TOP_RANK and (row.item_code, row.kind_code) in wanted)
-    overall = {(row.item_code, row.kind_code): row for row in rows if row.rank == TOP_RANK}
+    wanted = {_row_key(item) for item in items}
+    rows, failed, tried = latest_overall(source, today, lambda row: _row_key(row) in wanted)
+    overall = {_row_key(row): row for row in rows if _row_key(row) in wanted}
     return overall, failed, tried
+
+
+def _row_key(x: Any) -> Tuple[str, str, str]:
+    """품종이나 전체 평균 줄을 (품목 코드, 품종 코드, 등급 번호)로 나타낸다."""
+    return (x.item_code, x.kind_code, x.rank_code)
 
 
 def _same_unit(a: str, b: str) -> bool:
@@ -88,8 +94,7 @@ def run(source: Source, items: List[Item], out_path: Path, today: date) -> str:
     if len(failed_categories) == len(CATEGORIES):
         reasons = "; ".join(f"부류 {code}: {reason}" for code, reason in failed_categories.items())
         raise CollectError(f"전체 평균을 한 부류도 받지 못했습니다({reasons}).")
-    wanted = {(item.item_code, item.kind_code) for item in items}
-    priced = [row for key, row in overall.items() if row.today is not None and key in wanted]
+    priced = [row for row in overall.values() if row.today is not None]
     if not priced:
         hint = " 샘플이면 먼저 `uv run python -m collector.make_sample`을 돌리세요." \
             if source.name == SAMPLE_NAME else ""
@@ -111,7 +116,7 @@ def run(source: Source, items: List[Item], out_path: Path, today: date) -> str:
         if item.category_code in failed_categories:
             failed_ids.add(item.id)
             continue
-        row = overall.get((item.item_code, item.kind_code))
+        row = overall.get(_row_key(item))
         if row is not None and not _same_unit(row.unit, item.unit):
             # 품종 목록 파일과 KAMIS가 알려 준 조사 단위가 다르면 단위 가격이 틀리므로 실패로 다룬다.
             unit_mismatch.append(f"{item.id}({item.unit}→{row.unit})")

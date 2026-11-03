@@ -73,7 +73,8 @@ def _category_row(item: Item, rank: str, base: float, slope: float, gap: float,
     labels = ["당일", "1일전", "1주일전", "2주일전", "1개월전", "1년전"]
     row: Dict[str, Any] = {"item_name": item.item_name, "itemcode": item.item_code,
                            "kind_name": item.kind_name, "kindcode": item.kind_code,
-                           "rank": rank, "unit": item.unit}
+                           "rank": rank, "rank_code": item.rank_code if rank == "상품" else "05",
+                           "unit": item.unit}
     for n, (label, d, p) in enumerate(zip(labels, days, prices), start=1):
         row[f"day{n}"] = f"{label} ({_md(d)})"
         row[f"dpr{n}"] = _won(p)

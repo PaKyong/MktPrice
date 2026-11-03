@@ -149,6 +149,7 @@ def parse_category(raw: Dict[str, Any], category_code: str, today: date) -> List
                 month_ago=parse_price(it.get("dpr5")),
                 year_ago=parse_price(it.get("dpr6")),
                 normal=parse_price(it.get("dpr7")),
+                rank_code=str(it.get("rank_code") or ""),
             ))
         except (ValueError, TypeError, AttributeError):
             continue
