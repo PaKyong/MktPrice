@@ -1,6 +1,7 @@
 """수집 순서 전체(설계 5절).
 
-    uv run python -m collector
+    uv run python -m collector            # 기준일·출처가 기존 파일과 같으면 건너뛴다
+    uv run python -m collector --force    # 같아도 다시 쓴다(품종 목록을 다시 만든 날)
 
 키(환경변수 KAMIS_CERT_KEY, KAMIS_CERT_ID)가 있으면 실제 KAMIS를, 없으면
 `collector/sample/`의 샘플 응답을 읽어 `data/prices.json`을 만든다.
@@ -57,7 +58,7 @@ def _same_unit(a: str, b: str) -> bool:
     return a.replace(" ", "").lower() == b.replace(" ", "").lower()
 
 
-def run(source: Source, items: List[Item], out_path: Path, today: date) -> str:
+def run(source: Source, items: List[Item], out_path: Path, today: date, force: bool = False) -> str:
     """한 번 수집해 화면용 파일을 만든다.
 
     1. 기존 파일을 읽고, 샘플이 실제 데이터를 덮어쓰려 하면 멈춘다.
@@ -77,6 +78,8 @@ def run(source: Source, items: List[Item], out_path: Path, today: date) -> str:
         items: 품종 목록.
         out_path: 화면용 파일 경로.
         today: 오늘 날짜(한국 시각). 날짜 글자의 연도를 정하는 데 쓴다.
+        force: 참이면 기준일·출처가 기존 파일과 같아도 건너뛰지 않는다(품종 목록을 다시
+            만든 날에 쓴다).
 
     Returns:
         "updated" 또는 "skipped".
@@ -103,7 +106,7 @@ def run(source: Source, items: List[Item], out_path: Path, today: date) -> str:
                            " 맞지 않을 수 있습니다(`uv run python -m collector.make_items`)."
                            + " 날마다 받은 응답(부류:코드): " + " / ".join(tried))
     as_of = max(row.as_of for row in priced)
-    if should_skip(existing, as_of, source.name):
+    if not force and should_skip(existing, as_of, source.name):
         return "skipped"
 
     start = as_of - timedelta(days=WINDOW_DAYS - 1)
@@ -167,7 +170,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     """환경변수로 받기 쪽을 골라 한 번 수집한다.
 
     Args:
-        argv: 명령줄 인자(쓰지 않음).
+        argv: 명령줄 인자. `--force`가 있으면 기준일이 같아도 다시 쓴다. None이면 sys.argv.
 
     Returns:
         종료 코드. 갱신했거나 건너뛰었으면 0, 실패했으면 1.
@@ -175,7 +178,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     source = make_source(os.environ, SAMPLE_DIR)
     today = datetime.now(KST).date()
     try:
-        result = run(source, load_items(ITEMS_PATH), PRICES_PATH, today)
+        args = sys.argv[1:] if argv is None else argv
+        result = run(source, load_items(ITEMS_PATH), PRICES_PATH, today, force="--force" in args)
     except (CollectError, SampleGuardError) as err:
         print(f"수집 실패: {err}", file=sys.stderr)
         return 1

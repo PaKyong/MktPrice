@@ -235,3 +235,23 @@ def test_run_matches_overall_rows_by_grade_code(tmp_path: Path) -> None:
     with pytest.raises(CollectError, match="값이 없어"):
         run(RankCodeSource(sample_source(tmp_path, date(2026, 11, 2))), ITEMS, tmp_path / "prices.json",
             date(2026, 11, 3))
+
+
+def test_run_force_rewrites_even_when_day_is_same(tmp_path: Path) -> None:
+    # 품종 목록을 다시 만든 날은 기준일이 같아도 새 목록으로 다시 써야 한다.
+    out = tmp_path / "prices.json"
+    src = sample_source(tmp_path, date(2026, 11, 2))
+    run(src, ITEMS, out, date(2026, 11, 3))
+    assert run(src, ITEMS[:2], out, date(2026, 11, 3), force=True) == "updated"
+    assert [e["id"] for e in read(out)["items"]] == [i.id for i in ITEMS[:2]]
+
+
+def test_main_reads_force_flag(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    import collector.__main__ as entry
+
+    calls: List[bool] = []
+    monkeypatch.setattr(entry, "run", lambda source, items, out, today, force=False: calls.append(force) or "updated")
+    monkeypatch.delenv("KAMIS_CERT_KEY", raising=False)
+    assert entry.main(["--force"]) == 0
+    assert entry.main([]) == 0
+    assert calls == [True, False]
