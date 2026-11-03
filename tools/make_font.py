@@ -79,6 +79,8 @@ def subset_font(src: Path, dst: Path, chars: str, family: str, style: str) -> No
     options = subset.Options()
     options.flavor = "woff2"
     options.hinting = False
+    # fontTools는 기본으로 이름 기록 0~6번만 남긴다. 사용 조건 문구(13·14번)도 남긴다.
+    options.name_IDs = [0, 1, 2, 3, 4, 5, 6, *KEEP_NAME_IDS[1:]]
     subsetter = subset.Subsetter(options)
     subsetter.populate(text=chars)
     subsetter.subset(font)

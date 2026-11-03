@@ -87,3 +87,4 @@ def test_subset_font_renames_reserved_font_name(tmp_path):
         if rec.nameID not in (0, 13, 14):
             assert "Nanum" not in rec.toUnicode()
     assert "NHN" in names.getDebugName(0)
+    assert "Open Font License" in names.getDebugName(13)
