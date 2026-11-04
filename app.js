@@ -3,12 +3,12 @@
 
 import { addFavorite, getFavorites, moveFavorite, removeFavorite } from "./store.js";
 
-// chip: 전체 품목에서 마지막으로 누른 부류 칸(다시 그려도 칠한 채로 둔다). chipsLeft: 칸 줄을 옆으로 민 위치.
-// filter: "싼 편"·"비싼 편"을 모아 보는 중이면 그 이름, 아니면 null.
+// chip: 전체 품목에서 고른 칸 이름(부류, 이마트 묶음, "싼 편"·"비싼 편"). null이면 첫 부류(채소류)다.
+// 앱을 닫을 때까지 기억한다. chipsLeft: 칸 줄을 옆으로 민 위치.
 // cameFromApp, homeScroll: 상세로 들어오기 전 화면과 그 화면의 스크롤 위치(←로 돌아갈 때 쓴다).
 // emart: data/emart.json(참가격 이마트 값, 없으면 null), emartItems: 그 상품들을 묶음 순서로, 묶음 안은 상품명 가나다순으로.
 const state = { data: null, emart: null, emartItems: [], byId: new Map(), favorites: [], query: "", chip: null,
-                chipsLeft: 0, filter: null, cameFromApp: false, homeScroll: 0 };
+                chipsLeft: 0, cameFromApp: false, homeScroll: 0 };
 const $ = (id) => document.getElementById(id);
 // 이마트 상품의 id(즐겨찾기 열쇠, 상세 주소)는 상품명 앞에 이것을 붙인다.
 const EMART_ID = "이마트:";
@@ -222,25 +222,24 @@ function renderHome() {
     if (!byCategory.has(c)) byCategory.set(c, []);
     byCategory.get(c).push(e);
   }
-  // 칸 줄 맨 앞의 "싼 편", "비싼 편": 누르면 그 품목들만 모아 본다(첫 화면 길이는 그대로).
-  const filters = signalLists();
-  const blocks = state.filter && filters.has(state.filter)
-    ? [[state.filter, filters.get(state.filter),
-        `평년보다 ${Math.round(state.data.threshold_pct)}% 넘게 ${state.filter === "싼 편" ? "싼" : "비싼"} 품종`]]
-    : [...byCategory].map(([c, list]) => [c, list, c]);
-  // 칸과 부류 제목은 이름 뒤에 흐린 개수를 따로 붙인다("채소류 43").
+  // 칸 줄: 맨 앞에 "싼 편", "비싼 편", 그 뒤에 부류와 이마트 묶음. 늘 칸 하나를 골라 그 칸의 품목만 보인다.
+  // 고른 칸이 없어졌으면(새 가격 파일에 싼 편이 하나도 없는 날 등) 첫 부류로 돌아간다.
+  const tabs = new Map([...signalLists(), ...byCategory]);
+  const chosen = tabs.has(state.chip) ? state.chip : byCategory.keys().next().value;
+  const title = chosen === "싼 편" || chosen === "비싼 편"
+    ? `평년보다 ${Math.round(state.data.threshold_pct)}% 넘게 ${chosen === "싼 편" ? "싼" : "비싼"} 품종`
+    : chosen;
+  // 칸과 칸 제목은 이름 뒤에 흐린 개수를 따로 붙인다("채소류 43").
   const count = (n) => h("span", { class: "chip__n" }, n);
-  const chip = (c, n, onclick) =>
-    h("button", { type: "button", class: c === state.chip || c === state.filter ? "chip chip--on" : "chip",
-                  "data-category": c, onclick }, c, count(n));
   view.append(h("section", { class: "section" },
     h("h2", { class: "sec" }, "전체 품목"),
     h("nav", { class: "chips", "aria-label": "부류" },
-      [...filters].map(([c, list]) => chip(c, list.length, () => toggleFilter(c))),
-      [...byCategory].map(([c, list]) => chip(c, list.length, () => jumpTo(c)))),
-    blocks.map(([c, list, title]) => h("section", { class: "cat-block", id: `cat-${c}`, "data-category": c },
-      h("h3", { class: "cat" }, title, count(list.length)),
-      h("ul", { class: "rows" }, list.map((e) => itemRow(e, false, true)))))));
+      [...tabs].map(([c, list]) => h("button", { type: "button", class: c === chosen ? "chip chip--on" : "chip",
+                                                 "aria-pressed": String(c === chosen), onclick: () => choose(c) },
+        c, count(list.length)))),
+    h("section", { class: "cat-block" },
+      h("h3", { class: "cat" }, title, count(tabs.get(chosen).length)),
+      h("ul", { class: "rows" }, tabs.get(chosen).map((e) => itemRow(e, false, true))))));
   // 다시 그려도, 상세에 갔다 와도 옆으로 밀어 둔 부류 칸 줄 위치를 그대로 둔다(render가 지우기 전에 적어 둔다).
   view.querySelector(".chips").scrollLeft = state.chipsLeft;
 }
@@ -367,63 +366,16 @@ function signalLists() {
   return lists;
 }
 
-// "싼 편"·"비싼 편" 칸: 누르면 그 품목들만 모아 보고, 다시 누르면 전체로 돌아온다. 목록 맨 위로 간다.
-function toggleFilter(name) {
+// 칸을 누르면 그 칸의 품목으로 바꿔 그린다. 목록을 내려 칸 줄이 맨 위에 붙어 있었으면 새 목록의 첫 줄이
+// 칸 줄 바로 아래 오게 올리고, 즐겨찾기가 보이던 자리면 그대로 둔다(즐겨찾기가 위로 밀려 가지 않게).
+function choose(name) {
   $("search").blur();
-  state.filter = state.filter === name ? null : name;
-  state.chip = state.filter;
+  state.chip = name;
   render();
-  const first = $("view").querySelector(".cat-block");
-  window.scrollTo(0, first.getBoundingClientRect().top + window.scrollY - coveredHeight());
-}
-
-// 화면 맨 위에 붙은 부류 칸 줄이 가리는 높이(칸 줄 높이 + 위 안전 영역). 그 아래부터가 목록이 보이는 자리다.
-function coveredHeight() {
   const chips = document.querySelector(".chips");
-  return chips.offsetHeight + parseFloat(getComputedStyle(chips).top);
-}
-
-// 칸을 칠하고, 칸 줄에서 그 칸이 보이게 옆으로 민다. 칸 줄만 밀어 화면 전체가 옆으로 밀리지 않게 한다.
-function markChip(category) {
-  state.chip = category;
-  const chips = document.querySelector(".chips");
-  for (const chip of chips.children) {
-    // 모아 보기 중에는 그 칸을 늘 칠해 둔다(목록 위로 올려도 모아 보는 중인 것을 알게).
-    const on = chip.dataset.category === category || chip.dataset.category === state.filter;
-    chip.classList.toggle("chip--on", on);
-    if (on && (chip.offsetLeft < chips.scrollLeft
-               || chip.offsetLeft + chip.offsetWidth > chips.scrollLeft + chips.clientWidth)) {
-      chips.scrollTo({ left: chip.offsetLeft - 16 });
-    }
-  }
-}
-
-// 부류 칸을 누르면 그 부류로 건너뛰고 칸을 칠한다. 위에 붙은 막대와 칸 줄에 가리지 않게 그만큼 덜 내린다.
-function jumpTo(category) {
-  $("search").blur();
-  // 싼 편·비싼 편을 모아 보던 중이면 전체 목록으로 돌아온 뒤 건너뛴다.
-  if (state.filter) {
-    state.filter = null;
-    render();
-  }
-  markChip(category);
-  const section = document.getElementById(`cat-${category}`);
-  window.scrollTo(0, section.getBoundingClientRect().top + window.scrollY - coveredHeight());
-}
-
-// 전체 품목을 내리는 대로 지금 맨 위에 보이는 부류의 칸을 칠한다. 화면을 한 번 그릴 때 한 번만 본다.
-let spyQueued = false;
-function spyChip() {
-  spyQueued = false;
-  const blocks = document.querySelectorAll(".cat-block");
-  if (!blocks.length || !document.querySelector(".chips")) return;
-  const line = coveredHeight() + 1;
-  let current = null;
-  for (const block of blocks) {
-    if (block.getBoundingClientRect().top > line) break;
-    current = block.dataset.category;
-  }
-  if (current !== state.chip) markChip(current);
+  const covered = chips.offsetHeight + parseFloat(getComputedStyle(chips).top);
+  const top = $("view").querySelector(".cat-block").getBoundingClientRect().top + window.scrollY - covered;
+  window.scrollTo(0, Math.min(window.scrollY, top));
 }
 
 // ---- 검색 ----
@@ -894,11 +846,6 @@ async function init() {
     render();
     window.scrollTo(0, 0);
   });
-  window.addEventListener("scroll", () => {
-    if (spyQueued) return;
-    spyQueued = true;
-    requestAnimationFrame(spyChip);
-  }, { passive: true });
   // 목록을 손가락으로 내리기 시작하면 자판을 닫아 화면을 넓힌다.
   window.addEventListener("touchmove", () => {
     if (document.activeElement === $("search")) $("search").blur();
