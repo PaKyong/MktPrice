@@ -17,7 +17,7 @@ const SHELL = [
   "app.js",
   "store.js",
   "manifest.webmanifest",
-  "fonts/geist-num.woff2",
+  "fonts/mkt-sans.woff2",
   "icons/icon-192.png",
   "icons/icon-512.png",
   "icons/apple-touch-icon.png",

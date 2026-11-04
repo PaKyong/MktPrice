@@ -838,7 +838,7 @@ async function init() {
     ev.preventDefault();
     $("search").blur();
   });
-  // ✕는 검색어를 지우고 첫 화면으로 돌아간다.
+  // 지우기 단추(×)는 검색어를 지우고 첫 화면으로 돌아간다.
   $("search-clear").addEventListener("click", () => {
     state.query = "";
     $("search").value = "";

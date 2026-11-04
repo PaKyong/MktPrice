@@ -15,5 +15,5 @@ __pycache__/
 # 샘플 응답은 make_sample로 언제든 똑같이 다시 만들 수 있고 14MB라 넣지 않는다
 /collector/sample/
 
-# 글꼴 원본(Geist, 예전 영수증 글꼴). 만든 글꼴(fonts/)만 넣고 원본은 넣지 않는다
+# 글꼴 원본(Pretendard, 예전 영수증 글꼴). 만든 글꼴(fonts/)만 넣고 원본은 넣지 않는다
 /tools/fonts-src/

@@ -1,10 +1,11 @@
 /* 장보기 가격 — 선반 앞에서 한 손으로(설계 8절). 큰 숫자 하나, 아래 검색창, 상세 아래 가격표 받침 */
 
-/* 가격 숫자 글꼴: Geist에서 숫자·쉼표·%만 잘라 만든 것(tools/make_font.py). 한글과 "원"은 폰 기본 글꼴 */
+/* 화면 글꼴: Pretendard에서 자주 쓰는 한글과 이름·화면 글자만 남긴 것(tools/make_font.py). 굵기는 한 파일에 다 있다.
+   사용 조건(SIL OFL)상 고친 글꼴은 원래 이름을 쓰지 못해 MktSans라고 부른다 */
 @font-face {
-  font-family: "Geist Num";
-  src: url("fonts/geist-num.woff2") format("woff2");
-  font-weight: 600;
+  font-family: "MktSans";
+  src: url("fonts/mkt-sans.woff2") format("woff2-variations"), url("fonts/mkt-sans.woff2") format("woff2");
+  font-weight: 100 900;
   font-display: swap;
 }
 
@@ -66,7 +67,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR",
+  font-family: "MktSans", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR",
     "Malgun Gothic", sans-serif;
   font-size: 16px;
   line-height: 1.5;
@@ -79,11 +80,9 @@ body {
 
 button, input { font: inherit; color: inherit; }
 
-/* 가격 숫자: Geist 반굵게, 자리 폭을 같게. "원"은 <small>로 한 단계 작게 붙인다 */
-.num { font-family: "Geist Num", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR",
-  "Malgun Gothic", sans-serif; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
-.num small { margin-left: 1px; font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR",
-  "Malgun Gothic", sans-serif; font-weight: 600; letter-spacing: 0; }
+/* 가격 숫자: 반굵게, 자리 폭을 같게. "원"은 <small>로 한 단계 작게 붙인다 */
+.num { font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.num small { margin-left: 1px; font-weight: 600; letter-spacing: 0; }
 .muted { color: var(--muted); }
 .down { color: var(--down); }
 .up { color: var(--up); }
@@ -314,8 +313,7 @@ body.detail .view { padding-bottom: 0; }
 .field__name { flex: none; color: #4a515b; font-size: 15px; }
 .field input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: none; color: #000000;
   font-size: 26px; text-align: right; }
-.field input::placeholder { color: #6b737d; font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
-  "Noto Sans KR", "Malgun Gothic", sans-serif; font-size: 17px; font-weight: 400; letter-spacing: 0; }
+.field input::placeholder { color: #6b737d; font-size: 17px; font-weight: 400; letter-spacing: 0; }
 .field .won { flex: none; font-size: 17px; font-weight: 600; }
 .field input:placeholder-shown + .won { display: none; }
 

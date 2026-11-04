@@ -11,7 +11,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <link rel="preload" href="fonts/geist-num.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/mkt-sans.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -48,7 +48,10 @@
          aria-hidden="true"><circle cx="9" cy="9" r="6"/><path d="M13.5 13.5 17 17"/></svg>
     <input id="search" type="search" placeholder="품목 검색 (예: 양파)" autocomplete="off"
            enterkeyhint="search" aria-label="품목 검색">
-    <button type="button" id="search-clear" class="search__clear" aria-label="검색 지우기" hidden>✕</button>
+    <button type="button" id="search-clear" class="search__clear" aria-label="검색 지우기" hidden>
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+           aria-hidden="true"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/></svg>
+    </button>
   </form>
   <div id="toast" class="toast" role="status" hidden>
     <span id="toast-text"></span>
