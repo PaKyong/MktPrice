@@ -21,7 +21,7 @@
 1. 주소를 열고 홈 화면에 추가합니다(아이폰 Safari: 공유 → 홈 화면에 추가, 안드로이드 Chrome: 메뉴 → 홈 화면에 추가).
 2. 화면 아래 검색창에 품목 이름을 치거나, "전체 품목"의 칸(싼 편, 채소류, 이마트 라면·면 …)을 눌러 찾습니다.
 3. 품목을 누르면 상세 화면이 나옵니다. 오른쪽 위 ☆를 누르면 즐겨찾기에 들어가고, 목록에서 이름 뒤에 노란 ★가 붙습니다.
-4. 상세 화면 아래 검은 받침의 칸에 가격표 값을 넣으면, 대형마트 값 막대 위에 노란 핀이 꽂히고 "대형마트에서 흔한 값이에요"처럼 한 마디로 알려 줍니다.
+4. 상세 화면의 "가게마다" 막대에서 대형마트 절반이 얼마 사이인지 보고("대형마트 절반은 480~796원이에요"), 가격표 값과 눈으로 견줍니다.
 5. 마트 안에서 인터넷이 안 돼도 마지막으로 받은 값으로 열립니다.
 
 값이 바뀌는 때
@@ -86,15 +86,15 @@ uv run python -m http.server 8000        # 화면 보기: http://localhost:8000
 - 이마트 묶음은 [collector/emart_groups.json](collector/emart_groups.json)을 손으로 고칩니다(묶음 이름 → 상품명 목록, 적은 순서가 칸 순서). 목록에 없는 새 상품은 "이마트 기타" 칸에 모이고 Actions 기록에 이름이 남습니다.
 - `data/prices.json`과 `data/emart.json`은 손으로 고치지 않습니다. Actions가 평일마다 커밋하므로 푸시 전에 `git pull --rebase`로 먼저 받아 옵니다.
 - 아이콘은 `uv run python tools/make_icons.py`로 다시 만듭니다.
-- 가격 숫자 글꼴(Geist에서 숫자만 자른 `fonts/geist-num.woff2`)은 `uv run python tools/make_font.py`로 다시 만듭니다. 원본은 git 밖 `tools/fonts-src/`에 둡니다(받는 곳은 도구 맨 위 설명).
+- 화면 글꼴(Pretendard에서 자주 쓰는 한글과 이름·화면 글자만 남긴 `fonts/mkt-sans.woff2`)은 `uv run python tools/make_font.py`로 다시 만듭니다. 품목·상품 이름에 새 글자가 생기면 `uv run pytest`의 글꼴 시험이 알려 줍니다. 원본은 git 밖 `tools/fonts-src/`에 둡니다(받는 곳은 도구 맨 위 설명).
 
 ## 폴더
 
 | 경로 | 내용 |
 |---|---|
-| `index.html`, `app.js`, `store.js`, `style.css`, `sw.js`, `manifest.webmanifest`, `icons/`, `fonts/` | 화면(정적 사이트). `store.js`는 즐겨찾기 저장, `sw.js`는 오프라인용 서비스 워커, `fonts/`는 가격 숫자 글꼴 |
+| `index.html`, `app.js`, `store.js`, `style.css`, `sw.js`, `manifest.webmanifest`, `icons/`, `fonts/` | 화면(정적 사이트). `store.js`는 즐겨찾기 저장, `sw.js`는 오프라인용 서비스 워커, `fonts/`는 화면 글꼴(Pretendard를 잘라 이름을 MktSans로 바꾼 것) |
 | `collector/` | 수집 스크립트. KAMIS(`kamis.py`, `compute.py`), 참가격(`champrice.py`, `emart.py`), 품종 목록 `items.json`, 이마트 묶음 `emart_groups.json` |
 | `data/` | 화면이 읽는 파일. Actions가 만든다 |
-| `tools/` | 아이콘·숫자 글꼴 만들기와 그 시험, 배포 파일 점검 시험 |
+| `tools/` | 아이콘·화면 글꼴 만들기와 그 시험, 배포 파일 점검 시험 |
 | `.github/workflows/collect.yml` | 예약 수집, 커밋, 배포 |
 | `docs/` | 설계(`design.md`), 결정 기록(`decisions.md`), 구현 계획(`plan*.md`) |
