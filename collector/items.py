@@ -5,11 +5,12 @@
 """
 
 import json
+import re
 from dataclasses import asdict
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
-from collector.models import CATEGORIES, Item, OverallRow
+from collector.models import CATEGORIES, LIVESTOCK, Item, OverallRow
 from collector.units import classify_unit
 
 TOP_RANK = "상품"
@@ -17,9 +18,11 @@ ITEMS_PATH = Path(__file__).parent / "items.json"
 
 
 # 품종마다 쓸 등급의 우선순위. 농산물은 "상품", 수산물은 "상품"이 없어 등급 없음(-),
-# 中, 중멸(마른멸치), 大 순서로 고른다(2026-11-03 결정). 여기 없는 등급(중품, 小, 축산물의
-# 1등급 등)만 있는 품종은 넣지 않는다.
+# 中, 중멸(마른멸치), 大 순서로 고른다(2026-11-03 결정). 여기 없는 등급(중품, 小 등)만 있는
+# 품종은 넣지 않는다. 축산물은 등급마다 따로 넣는다(2026-11-04 결정).
 RANK_PREFERENCE = (TOP_RANK, "-", "中", "중멸", "大")
+# 축산물 품목 이름을 장볼 때 쓰는 말로 바꾼다. KAMIS의 "소"는 1++~1등급 국산 소고기라 한우로 본다.
+LIVESTOCK_NAMES = {"소": "한우", "돼지": "돼지고기", "닭": "닭고기"}
 
 
 def _drop_unit(kind_name: str, unit: str) -> str:
@@ -30,12 +33,26 @@ def _drop_unit(kind_name: str, unit: str) -> str:
     return kind_name
 
 
+def _livestock_names(row: OverallRow) -> Tuple[str, str]:
+    """축산물 줄의 화면 품목·품종 이름을 정한다.
+
+    품목 이름은 `LIVESTOCK_NAMES`로 바꾸고, 품종 이름 끝의 "(kg)" 같은 단위는 지운다. 등급("1+등급")이나
+    산지("미국산")는 품종 이름 뒤에 붙여 등급만 다른 줄을 가른다("등심 1+등급"). 이미 바꾼 이름으로 다시
+    만들어도 같은 이름이 나온다.
+    """
+    kind = re.sub(r"\((?:kg|g)\)$", "", row.kind_name)
+    if row.rank.endswith(("등급", "산")) and not kind.endswith(row.rank):
+        kind = f"{kind} {row.rank}"
+    return LIVESTOCK_NAMES.get(row.item_name, row.item_name), kind
+
+
 def build_items(rows: List[OverallRow], rank_code: str) -> List[Item]:
     """전체 평균 줄들로 품종 목록을 만든다.
 
     품종(품목·품종 코드)마다 `RANK_PREFERENCE`에서 가장 앞선 등급의 줄 하나를 골라,
     조사 단위를 무게/개수 구분과 양으로 나누고, 부류 이름을 붙여 품종 id 순으로
     정렬한다. 품종 이름 끝의 "(조사 단위)"는 지운다. 등급 번호는 그 줄의 것을 쓴다.
+    축산물은 등급마다 한 품종으로 넣고(id 끝에 등급 번호), 이름은 `_livestock_names`로 정한다.
 
     Args:
         rows: 전체 평균 API를 해석한 줄들.
@@ -49,6 +66,9 @@ def build_items(rows: List[OverallRow], rank_code: str) -> List[Item]:
     """
     best: Dict[str, OverallRow] = {}
     for row in rows:
+        if row.category_code == LIVESTOCK:
+            best[f"{row.item_code}-{row.kind_code}-{row.rank_code}"] = row
+            continue
         if row.rank not in RANK_PREFERENCE:
             continue
         item_id = f"{row.item_code}-{row.kind_code}"
@@ -59,14 +79,16 @@ def build_items(rows: List[OverallRow], rank_code: str) -> List[Item]:
     for item_id in sorted(best):
         row = best[item_id]
         measure, amount, label = classify_unit(row.unit)
+        item_name, kind_name = (_livestock_names(row) if row.category_code == LIVESTOCK
+                                else (row.item_name, _drop_unit(row.kind_name, row.unit)))
         items.append(Item(
             id=item_id,
             category_code=row.category_code,
             category_name=CATEGORIES.get(row.category_code, ""),
             item_code=row.item_code,
-            item_name=row.item_name,
+            item_name=item_name,
             kind_code=row.kind_code,
-            kind_name=_drop_unit(row.kind_name, row.unit),
+            kind_name=kind_name,
             rank_code=row.rank_code or rank_code,
             unit=row.unit,
             measure=measure,

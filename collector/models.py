@@ -17,6 +17,8 @@ CATEGORIES: Dict[str, str] = {
     "500": "축산물",
     "600": "수산물",
 }
+# 축산물 부류. 가게별 값이 없어 전국 평균으로 견주고, 등급마다 한 품종이다(2026-11-04 결정).
+LIVESTOCK = "500"
 
 
 @dataclass(frozen=True)
@@ -24,18 +26,19 @@ class Item:
     """품종 목록 파일의 품종 하나.
 
     Attributes:
-        id: "{item_code}-{kind_code}" 모양의 품종 id. 목록 저장과 화면이 이 값을 쓴다.
+        id: "{item_code}-{kind_code}" 모양의 품종 id. 축산물은 등급만 다른 줄이 있어 등급 번호를 더
+            붙인다("4301-22-02"). 목록 저장과 화면이 이 값을 쓴다.
         category_code: KAMIS 부류 코드(예: "400").
         category_name: 부류 이름(예: "과일류").
         item_code: KAMIS 품목 코드.
         item_name: 품목 이름(예: "사과").
         kind_code: KAMIS 품종 코드.
         kind_name: 품종 이름(예: "홍로").
-        rank_code: KAMIS 등급 코드(상품).
+        rank_code: KAMIS 등급 코드(상품. 수산물·축산물은 그 줄의 등급).
         unit: KAMIS 조사 단위 원문(예: "10개", "1kg").
-        measure: "weight"(무게) 또는 "count"(개수).
-        amount: 조사 단위의 양. 무게면 g, 개수면 개수.
-        unit_label: 단위 가격의 단위 이름. 무게면 "100g", 개수면 "개"·"포기" 등.
+        measure: "weight"(무게), "volume"(부피) 또는 "count"(개수).
+        amount: 조사 단위의 양. 무게면 g, 부피면 ml, 개수면 개수.
+        unit_label: 단위 가격의 단위 이름. 무게면 "100g", 부피면 "100ml", 개수면 "개"·"포기" 등.
     """
 
     id: str

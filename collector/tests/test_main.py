@@ -16,9 +16,10 @@ from collector.output import CollectError, SampleGuardError
 from collector.parse import KamisError
 
 ALL_ITEMS: List[Item] = load_items(ITEMS_PATH)
-# 부류마다 한 품종(축산물 500은 품종이 없다).
+# 농수산물 부류마다 한 품종. 축산물은 가게별 값이 없어 따로 시험한다.
 ITEMS: List[Item] = [next(i for i in ALL_ITEMS if i.category_code == code)
                      for code in ("100", "200", "300", "400", "600")]
+LIVESTOCK_ITEM: Item = next(i for i in ALL_ITEMS if i.category_code == "500")
 
 
 def sample_source(tmp_path: Path, as_of: date) -> SampleSource:
@@ -296,3 +297,40 @@ def test_main_reads_force_flag(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
     assert entry.main(["--force"]) == 0
     assert entry.main([]) == 0
     assert calls == [True, False]
+
+
+def test_run_livestock_uses_national_average(tmp_path: Path) -> None:
+    out = tmp_path / "prices.json"
+    items = ITEMS + [LIVESTOCK_ITEM]
+    write_sample(tmp_path / "sample", items, date(2026, 11, 2))
+    assert run(SampleSource(tmp_path / "sample"), items, out, date(2026, 11, 2)) == "updated"
+    e = next(e for e in read(out)["items"] if e["id"] == LIVESTOCK_ITEM.id)
+    assert (e["category"], e["as_of"]) == ("축산물", "2026-11-02")
+    assert e["stores"] is None and e["range"] is None and e["unit_range"] is None
+    assert e["trend"][-1] == ["2026-11-02", e["price"]]
+    assert e["change"]["normal"] is not None
+
+
+class MorningSource(FailingSource):
+    """11-03 아침처럼 축산물만 오늘 값이 있고 농수산물은 아직 없는 받기 쪽(11-02까지는 샘플 그대로)."""
+
+    def category(self, category_code: str, day: date) -> Dict[str, Any]:
+        raw = self.inner.category(category_code, day)
+        if day < date(2026, 11, 3):
+            return raw
+        if category_code != "500":
+            return {"data": ["001"]}
+        raw = json.loads(json.dumps(raw))
+        for row in raw["data"]["item"]:
+            row["day1"] = "당일 (11/03)"
+        return raw
+
+
+def test_run_date_is_not_pushed_ahead_by_livestock_alone(tmp_path: Path) -> None:
+    out = tmp_path / "prices.json"
+    items = ITEMS + [LIVESTOCK_ITEM]
+    write_sample(tmp_path / "sample", items, date(2026, 11, 2))
+    assert run(MorningSource(SampleSource(tmp_path / "sample")), items, out, date(2026, 11, 3)) == "updated"
+    data = read(out)
+    assert data["as_of"] == "2026-11-02"
+    assert all(e["change"]["normal"] is not None for e in data["items"])

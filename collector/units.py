@@ -1,13 +1,14 @@
 """KAMIS 조사 단위를 해석하고 단위 가격을 낸다.
 
-무게로 조사한 품종은 100g당, 개수로 조사한 품종은 그 단위 하나당 값을 낸다
-(설계 6절). "구"(계란)는 "개"로 바꿔 부른다.
+무게로 조사한 품종은 100g당, 부피로 조사한 품종(우유)은 100ml당, 개수로 조사한 품종은
+그 단위 하나당 값을 낸다(설계 6·18절). "구"(계란)는 "개"로 바꿔 부른다.
 """
 
 import re
 from typing import Tuple
 
 WEIGHT_GRAMS = {"kg": 1000.0, "g": 1.0}
+VOLUME_ML = {"l": 1000.0, "ml": 1.0}
 
 
 def round_won(x: float) -> int:
@@ -28,8 +29,8 @@ def round_won(x: float) -> int:
 def classify_unit(unit: str) -> Tuple[str, float, str]:
     """조사 단위 원문을 무게/개수 구분, 양, 단위 이름으로 나눈다.
 
-    앞의 숫자(없으면 1)와 뒤의 단위 글자를 나눈다. kg·g은 무게로 보고 g으로
-    바꾸며, 그 밖의 글자는 개수 단위 이름으로 쓴다. "구"는 "개"로 바꾼다.
+    앞의 숫자(없으면 1)와 뒤의 단위 글자를 나눈다. kg·g은 무게로 보고 g으로, L·ml은
+    부피로 보고 ml로 바꾸며, 그 밖의 글자는 개수 단위 이름으로 쓴다. "구"는 "개"로 바꾼다.
 
     Args:
         unit: KAMIS 조사 단위 원문(예: "1kg", "10개", "30구").
@@ -47,6 +48,8 @@ def classify_unit(unit: str) -> Tuple[str, float, str]:
     name = match.group(2)
     if name.lower() in WEIGHT_GRAMS:
         return ("weight", amount * WEIGHT_GRAMS[name.lower()], "100g")
+    if name.lower() in VOLUME_ML:
+        return ("volume", amount * VOLUME_ML[name.lower()], "100ml")
     if name == "구":
         name = "개"
     return ("count", amount, name)
@@ -57,12 +60,12 @@ def unit_price(price: int, measure: str, amount: float) -> int:
 
     Args:
         price: 조사 단위 하나의 값.
-        measure: "weight" 또는 "count".
-        amount: 조사 단위의 양(무게면 g, 개수면 개수).
+        measure: "weight", "volume" 또는 "count".
+        amount: 조사 단위의 양(무게면 g, 부피면 ml, 개수면 개수).
 
     Returns:
-        무게면 100g당, 개수면 하나당 값(원 단위 반올림).
+        무게면 100g당, 부피면 100ml당, 개수면 하나당 값(원 단위 반올림).
     """
-    if measure == "weight":
+    if measure in ("weight", "volume"):
         return round_won(price / amount * 100)
     return round_won(price / amount)

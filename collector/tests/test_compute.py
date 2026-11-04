@@ -5,7 +5,7 @@ from typing import Optional
 
 import pytest
 
-from collector.compute import build_entry, change_pct, mean_won, price_range, signal
+from collector.compute import build_entry, build_national_entry, change_pct, mean_won, price_range, signal
 from collector.models import Item, OverallRow, StoreRow
 from collector.parse import is_large_retail
 
@@ -95,3 +95,27 @@ def test_build_entry_none_when_no_value_in_31_days() -> None:
     # 31일 안 = 2026-10-03 ~ 2026-11-02
     assert build_entry(APPLE, None, [store("2026-10-02", "A-유통", 3000)], date(2026, 11, 2)) is None
     assert build_entry(APPLE, None, [store("2026-10-03", "A-유통", 3000)], date(2026, 11, 2)) is not None
+
+
+BEEF = Item(
+    id="4301-22-02", category_code="500", category_name="축산물", item_code="4301", item_name="한우",
+    kind_code="22", kind_name="등심 1+등급", rank_code="02", unit="100g", measure="weight",
+    amount=100.0, unit_label="100g")
+
+
+def test_build_national_entry_has_no_store_count_or_range() -> None:
+    row = OverallRow(
+        category_code="500", item_code="4301", item_name="한우", kind_code="22", kind_name="등심 1+등급",
+        rank="1+등급", unit="100g", as_of=date(2026, 11, 3), today=14456, week_ago=14005, month_ago=None,
+        year_ago=None, normal=10893, rank_code="02")
+    points = [(date(2026, 10, 3), 13000), (date(2026, 11, 2), 14400), (date(2026, 11, 3), 14456),
+              (date(2026, 11, 4), 14453)]
+    e = build_national_entry(BEEF, row, points, date(2026, 11, 3))
+    assert e is not None
+    assert (e["price"], e["unit_price"], e["as_of"]) == (14456, 14456, "2026-11-03")
+    assert e["stores"] is None and e["range"] is None and e["unit_range"] is None
+    # 31일 밖(10-03)과 기준일 뒤(11-04)는 뺀다.
+    assert e["trend"] == [["2026-11-02", 14400], ["2026-11-03", 14456]]
+    assert e["change"]["week"] == round((14456 - 14005) / 14005 * 100, 1)
+    assert e["signal"] == "비싼 편"
+    assert build_national_entry(BEEF, row, [], date(2026, 11, 3)) is None

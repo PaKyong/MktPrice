@@ -8,14 +8,17 @@
 """
 
 import re
-from datetime import date
-from typing import Any, Dict, List, Optional
+from datetime import date, timedelta
+from typing import Any, Dict, List, Optional, Tuple
 
 from collector.models import OverallRow, StoreRow
 
 NO_DATA = "001"
 SUCCESS = "000"
 LARGE_RETAIL_NAME = re.compile(r"[A-Z][`']?-(?:유통|마트)")
+# 기간 API의 축산물 날짜는 부류별 API보다 하루 앞선다(부류별 11-03 당일 값 = 기간 API 11-02 값,
+# 2026-11-04 문서의 예시 키로 다섯 품종을 닷새 동안 맞춰 봤다). 기준일과 맞추려고 하루 뒤로 민다.
+NATIONAL_DAY_SHIFT = timedelta(days=1)
 
 
 class KamisError(Exception):
@@ -189,3 +192,33 @@ def parse_period(raw: Dict[str, Any]) -> List[StoreRow]:
         rows.append(StoreRow(day=day, county=county, market=market, price=price,
                              large=is_large_retail(market)))
     return rows
+
+
+def parse_national(raw: Dict[str, Any]) -> List[Tuple[date, int]]:
+    """품목별 기간 API 응답에서 날짜별 전국 평균을 꺼낸다(축산물).
+
+    축산물은 가게 줄이 없고 지역이 "평균"·"평년"·"전국"인 줄만 온다. "평균" 줄만 쓰고, 날짜는
+    `NATIONAL_DAY_SHIFT`만큼 뒤로 밀어 부류별 API의 날짜와 맞춘다. 가격이 없거나(0 포함) 날짜를
+    읽을 수 없는 줄은 뺀다.
+
+    Args:
+        raw: 품목별 기간 API의 JSON 응답.
+
+    Returns:
+        (날짜, 전국 평균) 목록. "데이터 없음"이면 빈 목록.
+
+    Raises:
+        KamisError: 성공도 "데이터 없음"도 아닌 응답인 경우.
+    """
+    points = []
+    for it in _items_or_empty(raw):
+        try:
+            price = parse_price(it.get("price"))
+            month_day = re.search(r"(\d{1,2})[/-](\d{1,2})", str(it.get("regday", "")))
+            if str(it.get("countyname") or "").strip() != "평균" or price is None or not month_day:
+                continue
+            day = date(int(it.get("yyyy")), int(month_day.group(1)), int(month_day.group(2)))
+        except (ValueError, TypeError, AttributeError):
+            continue
+        points.append((day + NATIONAL_DAY_SHIFT, price))
+    return points

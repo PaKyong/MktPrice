@@ -15,11 +15,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 from zoneinfo import ZoneInfo
 
-from collector.compute import LARGE_ONLY, THRESHOLD_PCT, WINDOW_DAYS, build_entry
+from collector.compute import LARGE_ONLY, THRESHOLD_PCT, WINDOW_DAYS, build_entry, build_national_entry
 from collector.items import ITEMS_PATH, load_items
 from collector.kamis import (LOOKBACK_DAYS, SAMPLE_DIR, Source, latest_overall, make_source, months_back,
                              past_overall)
-from collector.models import CATEGORIES, Item, OverallRow
+from collector.models import CATEGORIES, LIVESTOCK, Item, OverallRow
 from collector.output import (
     PRICES_PATH,
     SAMPLE_NAME,
@@ -31,7 +31,7 @@ from collector.output import (
     should_skip,
     write_prices,
 )
-from collector.parse import KamisError, parse_period
+from collector.parse import KamisError, parse_national, parse_period
 
 KST = ZoneInfo("Asia/Seoul")
 
@@ -40,12 +40,14 @@ def _collect_overall(source: Source, items: List[Item], today: date
                      ) -> Tuple[Dict[Tuple[str, str], OverallRow], Dict[str, str], List[str]]:
     """가장 최근 조사일의 전체 평균에서 품종별 상품 줄, 실패한 부류(부류 → 이유), 날마다의 응답 모양을 돌려준다.
 
-    품종 목록에 있는 줄(품목·품종 코드와 등급 번호가 같은 줄)에 값이 있는 날을 찾는다.
-    축산물처럼 쓰지 않는 줄의 값은 보지 않는다. 수산물은 등급 이름이 "상품"이 아니라서
+    품종 목록에 있는 농수산물 줄(품목·품종 코드와 등급 번호가 같은 줄)에 값이 있는 날을 찾는다.
+    축산물 줄은 날을 정할 때 보지 않는다. 농수산물 값이 아직 안 올라온 날에도 축산물에는 값이
+    있어서, 보면 농수산물 값이 빈 날이 기준일이 된다. 수산물은 등급 이름이 "상품"이 아니라서
     등급 이름 대신 등급 번호로 고른다.
     """
     wanted = {_row_key(item) for item in items}
-    rows, failed, tried = latest_overall(source, today, lambda row: _row_key(row) in wanted)
+    rows, failed, tried = latest_overall(
+        source, today, lambda row: _row_key(row) in wanted and row.category_code != LIVESTOCK)
     overall = {_row_key(row): row for row in rows if _row_key(row) in wanted}
     return overall, failed, tried
 
@@ -100,8 +102,8 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
     3. 전체 평균의 당일 날짜(값이 있는 줄) 가운데 가장 늦은 날을 기준일로 삼고, 기존 파일과
        기준일·출처가 같으면 건너뛴다. 1개월 전·1년 전 값이 통째로 빈 부류는 가까운 조사일
        값으로 채운다.
-    4. 품종마다 기준일부터 거꾸로 31일의 가게 값을 받아 항목을 만든다. 전체
-       평균의 조사 단위가 품종 목록 파일과 다르면 그 품종은 실패로 다룬다.
+    4. 품종마다 기준일부터 거꾸로 31일의 가게 값(축산물은 날짜별 전국 평균)을 받아 항목을
+       만든다. 전체 평균의 조사 단위가 품종 목록 파일과 다르면 그 품종은 실패로 다룬다.
     5. 한 줄 요약을 찍고, 결과가 수상하면(새 항목이 없음, 전체 평균과 맞은
        품종이 없음) 기존 파일을 지키려고 멈춘다.
     6. 실패한 품종은 기존 항목을 남기되(기존 파일 출처가 같을 때만), 새 파일을
@@ -131,7 +133,7 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
     if len(failed_categories) == len(CATEGORIES):
         reasons = "; ".join(f"부류 {code}: {reason}" for code, reason in failed_categories.items())
         raise CollectError(f"전체 평균을 한 부류도 받지 못했습니다({reasons}).")
-    priced = [row for row in overall.values() if row.today is not None]
+    priced = [row for row in overall.values() if row.today is not None and row.category_code != LIVESTOCK]
     if not priced:
         hint = " 샘플이면 먼저 `uv run python -m collector.make_sample`을 돌리세요." \
             if source.name == SAMPLE_NAME else ""
@@ -161,11 +163,13 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
             failed_ids.add(item.id)
             continue
         try:
-            stores = parse_period(source.period(item, start, as_of))
+            raw = source.period(item, start, as_of)
+            # 축산물은 가게별 값이 없어 날짜별 전국 평균으로 만든다(설계 18절).
+            entry = (build_national_entry(item, row, parse_national(raw), as_of) if item.category_code == LIVESTOCK
+                     else build_entry(item, row, parse_period(raw), as_of))
         except KamisError:
             failed_ids.add(item.id)
             continue
-        entry = build_entry(item, row, stores, as_of)
         if entry is None:
             no_store_value += 1
             continue

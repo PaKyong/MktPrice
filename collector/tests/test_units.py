@@ -38,3 +38,9 @@ def test_unit_price() -> None:
     assert unit_price(2400, "weight", 1000) == 240  # 1kg 2,400원 → 100g당 240원
     assert unit_price(7500, "count", 30) == 250     # 30구 7,500원 → 1개당 250원
     assert unit_price(4000, "count", 1) == 4000     # 1포기
+
+
+def test_volume_is_per_100ml() -> None:
+    assert classify_unit("1L") == ("volume", 1000, "100ml")
+    assert classify_unit("500ml") == ("volume", 500, "100ml")
+    assert unit_price(2987, "volume", 1000) == 299  # 흰우유 1L 2,987원 → 100ml당 299원

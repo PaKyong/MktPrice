@@ -17,7 +17,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from collector.items import ITEMS_PATH, load_items
 from collector.kamis import SAMPLE_DIR
-from collector.models import CATEGORIES, Item
+from collector.models import CATEGORIES, LIVESTOCK, Item
+from collector.parse import NATIONAL_DAY_SHIFT
 from collector.units import round_won
 
 DEFAULT_AS_OF = date(2026, 11, 2)
@@ -92,7 +93,8 @@ def build_sample(items: List[Item], as_of: date,
     품종마다 기준 가격, 30일 동안의 오르내림, 평년 대비 차이를 난수로 정한다.
     전체 평균 응답에는 상품 줄(다섯 품종마다 중품 줄 하나 더)을, 가게 값
     응답에는 평일 31일 동안 대형유통 가게(그날 65% 확률로 조사)와 전통시장
-    다섯 곳의 값, 그리고 지역 "평균" 요약 줄을 넣는다.
+    다섯 곳의 값, 그리고 지역 "평균" 요약 줄을 넣는다. 축산물은 실제 응답처럼
+    가게 줄 없이 "평균" 줄만 넣고, 날짜를 하루 앞당긴다(중품 줄도 없다).
 
     Args:
         items: 품종 목록.
@@ -114,9 +116,16 @@ def build_sample(items: List[Item], as_of: date,
         has_month = rng.random() > 0.1
         by_category[item.category_code].append(
             _category_row(item, "상품", base, slope, gap, year_gap, as_of, has_month))
-        if n % 5 == 0:
+        if n % 5 == 0 and item.category_code != LIVESTOCK:
             by_category[item.category_code].append(
                 _category_row(item, "중품", base * 0.85, slope, gap, year_gap, as_of, has_month))
+        if item.category_code == LIVESTOCK:
+            periods[item.id] = {"data": {"error_code": "000", "item": [
+                {"itemname": [], "kindname": [], "countyname": "평균", "marketname": [],
+                 "yyyy": str((d - NATIONAL_DAY_SHIFT).year), "regday": _md(d - NATIONAL_DAY_SHIFT),
+                 "price": _won(base * (1 + slope * (i / (len(days) - 1) - 1)))}
+                for i, d in enumerate(days)]}}
+            continue
 
         large_factor = {m: rng.uniform(0.92, 1.08) for m in LARGE_MARKETS}
         trad_factor = {m: rng.uniform(0.8, 0.97) for m in TRADITIONAL_MARKETS}

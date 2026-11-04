@@ -1,7 +1,8 @@
 """설계 6절의 계산 규칙.
 
 가게별 값으로 대형유통 평균·범위·30일 추이를, 전체 평균 값으로 시기 비교 %와
-신호를 내고, 품종 하나의 화면용 항목(prices.json의 items 한 칸)을 만든다.
+신호를 내고, 품종 하나의 화면용 항목(prices.json의 items 한 칸)을 만든다. 가게별
+값이 없는 축산물은 날짜별 전국 평균으로 만든다(설계 18절).
 """
 
 import statistics
@@ -151,3 +152,26 @@ def build_entry(item: Item, overall: Optional[OverallRow], stores: List[StoreRow
         "signal": signal(pcts["normal"]),
         "trend": [[d.isoformat(), mean_won(by_day[d])] for d in sorted(by_day)],
     }
+
+
+def build_national_entry(item: Item, overall: Optional[OverallRow], points: List[Tuple[date, int]],
+                         as_of: date) -> Optional[Dict[str, Any]]:
+    """가게별 값이 없는 품종(축산물)의 화면용 항목을 날짜별 전국 평균으로 만든다.
+
+    날짜마다 전국 평균을 가게 한 곳의 값처럼 넣어 `build_entry`로 계산한 뒤, 가게가 없어 뜻이 없는
+    조사처 수와 범위를 비운다(None). 가격과 30일 추이는 전국 평균, 시기 비교는 `build_entry`와 같다.
+
+    Args:
+        item: 품종.
+        overall: 그 품종의 전체 평균 줄. 없으면 시기 비교는 모두 None.
+        points: (날짜, 전국 평균) 목록.
+        as_of: 파일 기준일.
+
+    Returns:
+        prices.json의 품종 항목. 31일 안에 값이 하나도 없으면 None.
+    """
+    stores = [StoreRow(day=day, county="전국", market="평균", price=price, large=True) for day, price in points]
+    entry = build_entry(item, overall, stores, as_of)
+    if entry is not None:
+        entry.update(stores=None, range=None, unit_range=None)
+    return entry

@@ -15,7 +15,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Protocol, Tuple
 
-from collector.models import CATEGORIES, Item, OverallRow
+from collector.models import CATEGORIES, LIVESTOCK, Item, OverallRow
 from collector.parse import KamisError, parse_category, parse_price
 
 # 문서에는 http://로 나오지만 키가 주소에 실려 가므로 https://를 쓴다(키를 받은 뒤 확인).
@@ -26,6 +26,10 @@ NO_DATA_RESPONSE: Dict[str, Any] = {"data": ["001"]}
 SAMPLE_DIR = Path(__file__).parent / "sample"
 # 오늘 값이 없으면(아직 안 올라왔거나 공휴일) 하루씩 거꾸로 이만큼까지 찾는다.
 LOOKBACK_DAYS = 7
+# 품목별 기간 API는 축산물 등급 번호를 부류별 API와 다르게 쓴다. 한우(01~03)는 같고, 등급이 하나인
+# 줄(돼지·닭·우유 "00", 계란 "71")은 "01", 수입 소고기 미국산·호주산("81"·"82")은 "01"·"02"다.
+# 2026-11-04 문서의 예시 키로 값이 오는 28줄 모두 부류별 API 값과 맞춰 봤다.
+LIVESTOCK_PERIOD_RANKS = {"00": "01", "71": "01", "81": "01", "82": "02"}
 
 
 class Source(Protocol):
@@ -112,6 +116,9 @@ class KamisSource:
     def period(self, item: Item, start: date, end: date) -> Dict[str, Any]:
         """품종 하나의 기간 가게별 값 응답을 받는다.
 
+        축산물은 가게별 기간 API가 가게 줄 없이 전국 평균만 주고 한우 등급도 가리지 않아(늘 1++ 값),
+        등급을 가리는 품목별 기간 API(`periodProductList`)로 날짜별 전국 평균을 받는다(2026-11-04).
+
         Args:
             item: 품종.
             start: 시작 날짜.
@@ -120,6 +127,18 @@ class KamisSource:
         Returns:
             KAMIS JSON 응답.
         """
+        if item.category_code == LIVESTOCK:
+            return self._get({
+                "action": "periodProductList",
+                "p_productclscode": "01",
+                "p_startday": start.isoformat(),
+                "p_endday": end.isoformat(),
+                "p_itemcategorycode": item.category_code,
+                "p_itemcode": item.item_code,
+                "p_kindcode": item.kind_code,
+                "p_productrankcode": LIVESTOCK_PERIOD_RANKS.get(item.rank_code, item.rank_code),
+                "p_convert_kg_yn": "N",
+            }, f"전국 평균 기간 값 {item.id}")
         return self._get({
             "action": "periodRetailProductList",
             "p_startday": start.isoformat(),

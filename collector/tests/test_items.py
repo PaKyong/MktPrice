@@ -43,7 +43,9 @@ def test_build_items_picks_one_grade_per_kind() -> None:
         make_row("4301", "21", "1등급", "100g", "01", category_code="500", item_name="소고기", kind_name="안심"),
     ]
     got = {i.id: i.rank_code for i in build_items(rows, rank_code="04")}
-    assert got == {"411-05": "04", "613-03": "21", "611-05": "20", "638-00": "28", "644-00": "30"}
+    # 축산물은 2026-11-04부터 등급마다 넣는다(id 끝에 등급 번호).
+    assert got == {"411-05": "04", "613-03": "21", "611-05": "20", "638-00": "28", "644-00": "30",
+                   "4301-21-01": "01"}
 
 
 def test_build_items_drops_survey_unit_from_kind_name() -> None:
@@ -66,3 +68,33 @@ def test_merge_items_updates_seen_kinds_and_keeps_out_of_season_ones() -> None:
     merged = merge_items(old, new)
     assert [i.id for i in merged] == ["251-00", "411-01", "411-08"]
     assert {i.id: i.unit for i in merged} == {"251-00": "3개", "411-01": "10개", "411-08": "10개"}
+
+
+def test_build_items_livestock_keeps_every_grade_with_everyday_names() -> None:
+    def meat(item_code: str, item_name: str, kind_code: str, kind_name: str, rank: str, rank_code: str,
+             unit: str = "100g") -> OverallRow:
+        return make_row(item_code, kind_code, rank, unit, rank_code=rank_code, category_code="500",
+                        item_name=item_name, kind_name=kind_name)
+
+    rows = [meat("4301", "소", "22", "등심", "1++등급", "01"), meat("4301", "소", "22", "등심", "1+등급", "02"),
+            meat("4304", "돼지", "27", "삼겹살", "삼겹살", "00"),
+            meat("4401", "수입 소고기", "31", "갈비", "미국산", "81"),
+            meat("9901", "닭", "99", "육계(kg)", "육계(kg)", "00", unit="1kg"),
+            meat("9903", "계란", "23", "XL30구", "일반란", "71", unit="30구"),
+            meat("9908", "우유", "01", "흰우유", "흰우유", "00", unit="1L")]
+    items = {i.id: i for i in build_items(rows, rank_code="04")}
+    assert {k: (i.category_name, i.item_name, i.kind_name, i.rank_code) for k, i in items.items()} == {
+        "4301-22-01": ("축산물", "한우", "등심 1++등급", "01"),
+        "4301-22-02": ("축산물", "한우", "등심 1+등급", "02"),
+        "4304-27-00": ("축산물", "돼지고기", "삼겹살", "00"),
+        "4401-31-81": ("축산물", "수입 소고기", "갈비 미국산", "81"),
+        "9901-99-00": ("축산물", "닭고기", "육계", "00"),
+        "9903-23-71": ("축산물", "계란", "XL30구", "71"),
+        "9908-01-00": ("축산물", "우유", "흰우유", "00"),
+    }
+    assert (items["9903-23-71"].measure, items["9903-23-71"].unit_label) == ("count", "개")
+    assert (items["9908-01-00"].measure, items["9908-01-00"].unit_label) == ("volume", "100ml")
+    # 다시 만들어도(이름이 이미 바뀐 줄로) 같은 품종이 나온다.
+    again = [meat(i.item_code, i.item_name, i.kind_code, i.kind_name, "상품", i.rank_code, i.unit)
+             for i in items.values()]
+    assert build_items(again, rank_code="04") == list(items.values())
