@@ -31,7 +31,11 @@
   /* 아래 검색창: 조금 비치는 옅은 바탕. 높이와 화면 아래와의 틈 */
   --glass: rgb(243 244 246 / 88%);
   --search-h: 54px;
-  --search-gap: calc(12px + env(safe-area-inset-bottom, 0px));
+  /* 아이폰 홈 표시줄 높이(안전 여백) */
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --search-gap: calc(12px + var(--safe-b));
+  /* 자판이 올라오면 홈 표시줄을 덮으므로 안전 여백 대신 자판 높이만 띄운다(자판 바로 위에 붙게) */
+  --search-bottom: calc(12px + max(var(--safe-b), var(--kb, 0px)));
   color-scheme: light;
 }
 
@@ -139,7 +143,8 @@ body.searching #home-title, body.searching #banner-install { display: none; }
 .section + .section::before { content: ""; display: block; height: 8px; margin: 28px -20px 0; background: var(--soft); }
 .sec { margin: 0; padding: 28px 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
 .cat { margin: 0; padding: 22px 0 2px; font-size: 15px; font-weight: 700; }
-.chip__n { margin-left: 5px; font-weight: 400; color: var(--muted); }
+/* 옅은 바탕 위라 흐린 글씨(--muted)로는 4.5:1이 안 돼 보조 글씨 색을 쓴다 */
+.chip__n { margin-left: 5px; font-weight: 400; color: var(--sub); }
 .empty { margin: 6px 0 0; color: var(--sub); font-size: 15px; line-height: 1.5; }
 .found { margin: 16px 0 4px; color: var(--sub); font-size: 14px; }
 .fav-hint { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
@@ -194,7 +199,7 @@ body.searching #home-title, body.searching #banner-install { display: none; }
   position: fixed;
   left: 12px;
   right: 12px;
-  bottom: calc(var(--search-gap) + var(--kb, 0px));
+  bottom: var(--search-bottom);
   z-index: 3;
   display: flex;
   align-items: center;
@@ -213,7 +218,7 @@ body.searching #home-title, body.searching #banner-install { display: none; }
 .search svg { flex: none; width: 20px; height: 20px; color: var(--sub); }
 .search input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: none;
   color: var(--text); font-size: 17px; }
-.search input::placeholder { color: var(--muted); }
+.search input::placeholder { color: var(--sub); }
 .search input::-webkit-search-cancel-button { display: none; }
 .search__clear { flex: none; width: 44px; height: 44px; border: 0; border-radius: 12px; background: none;
   color: var(--sub); font-size: 17px; cursor: pointer; }
@@ -263,7 +268,7 @@ body.detail .view { padding-bottom: 0; }
   right: 0;
   bottom: var(--kb, 0px);
   z-index: 3;
-  padding: 18px 20px calc(16px + env(safe-area-inset-bottom, 0px));
+  padding: 18px 20px calc(16px + max(0px, var(--safe-b) - var(--kb, 0px)));
   border-radius: 26px 26px 0 0;
   background: var(--dock);
   color: #ffffff;
@@ -326,7 +331,7 @@ body.detail .view { padding-bottom: 0; }
   position: fixed;
   left: 16px;
   right: 16px;
-  bottom: calc(var(--search-gap) + var(--search-h) + 12px + var(--kb, 0px));
+  bottom: calc(var(--search-bottom) + var(--search-h) + 12px);
   z-index: 4;
   display: flex;
   align-items: center;
