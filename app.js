@@ -41,6 +41,24 @@ function decodeId(raw) {
 const displayName = (e) => (e.kind.includes(e.item) ? e.kind : `${e.item} ${e.kind}`);
 const perUnit = (e) => (e.measure === "weight" ? "100g당" : `1${e.unit_label}당`);
 
+// 평년 비교 한 마디. 색은 신호가 싼 편이면 빨강(down), 비싼 편이면 파랑(up), 보통이면 없음.
+function normalText(e) {
+  const x = e.change.normal;
+  if (x === null || x === undefined) return { text: "평년 값 없음", cls: "" };
+  const cls = e.signal === "싼 편" ? "down" : e.signal === "비싼 편" ? "up" : "";
+  const r = Math.round(Math.abs(x));
+  if (r === 0) return { text: "평년과 같아요", cls };
+  return { text: `평년보다 ${r}% ${x < 0 ? "싸요" : "비싸요"}`, cls };
+}
+
+// 검색어 뒤에 붙일 "로"·"으로". 마지막 글자가 한글이고 받침이 있으면(ㄹ 받침은 빼고) "으로".
+function ro(word) {
+  const code = word.charCodeAt(word.length - 1) - 0xac00;
+  if (code < 0 || code >= 11172) return "로";
+  const final = code % 28;
+  return final === 0 || final === 8 ? "로" : "으로";
+}
+
 // 평년 대비 같은 %: 내리면 빨강 ▼, 오르면 파랑 ▲. 반올림해 0이면 흐린 0%, 값이 없으면 흐린 -.
 function pctText(x) {
   if (x === null || x === undefined) return { text: "-", cls: "muted" };
@@ -65,6 +83,11 @@ function h(tag, attrs = {}, ...children) {
   return el;
 }
 
+// 가격: Geist 숫자에 한 단계 작은 "원"을 붙인다(<b class="num">1,234<small>원</small></b>).
+const wonNode = (n, cls) => h("b", { class: cls ? `num ${cls}` : "num" }, n.toLocaleString("ko-KR"), h("small", {}, "원"));
+// 줄 아래의 작은 표시("이마트", "이마트 2곳", "11월 2일 값").
+const mini = (text) => h("span", { class: "mini" }, text);
+
 function svgEl(tag, attrs, text) {
   const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
   for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
@@ -88,12 +111,12 @@ function missedWeekdays(asOf) {
 
 function renderTop() {
   const { data } = state;
-  $("asof").textContent = `${data.as_of.replaceAll("-", ".")} 기준 · 출처 ${data.source}`
-    + (state.emart ? ` · 이마트 ${mdot(state.emart.as_of)} 조사` : "");
+  $("asof").textContent = `${data.source} ${md(data.as_of)} 값`
+    + (state.emart ? `, 이마트 ${md(state.emart.as_of)} 조사` : "");
   $("print-sample").hidden = data.source !== "샘플";
   const offline = $("print-offline");
   offline.hidden = navigator.onLine;
-  offline.textContent = `인터넷 연결 없음 · ${md(data.as_of)} 값`;
+  offline.textContent = `인터넷 연결 없음. ${md(data.as_of)} 값이에요.`;
   // 평일 이틀 치 넘게 새 값이 없으면 예약 실행이 멈췄을 수 있다. 인터넷이 없을 때는 위 띠로 충분하다.
   const stale = $("print-stale");
   stale.hidden = !navigator.onLine || data.source === "샘플" || missedWeekdays(data.as_of) <= 2;
@@ -102,7 +125,7 @@ function renderTop() {
 
 // ---- 한 줄 ----
 
-// 줄 가운데의 30일 작은 그래프. 색은 오른쪽 % 하나에만 쓰므로 회색 선 하나. 값이 둘보다 적으면 그리지 않는다.
+// 줄 가운데의 30일 작은 그래프. 색은 평년 비교 한 마디에만 쓰므로 흐린 선 하나. 값이 둘보다 적으면 그리지 않는다.
 // 세로 폭은 적어도 평균의 위아래 10%로 잡는다. 꽉 채워 그리면 30일 동안 1%만 움직여도 절벽처럼 보인다.
 function sparkline(trend) {
   if (trend.length < 2) return null;
@@ -113,9 +136,9 @@ function sparkline(trend) {
   const half = Math.max((high - low) / 2, mean * 0.1);
   const min = (low + high) / 2 - half;
   const points = values
-    .map((v, i) => `${((i / (values.length - 1)) * 56).toFixed(1)},${(22 - ((v - min) / (half * 2)) * 20).toFixed(1)}`)
+    .map((v, i) => `${((i / (values.length - 1)) * 48).toFixed(1)},${(21 - ((v - min) / (half * 2)) * 20).toFixed(1)}`)
     .join(" ");
-  const svg = svgEl("svg", { viewBox: "0 0 56 24", class: "spark", "aria-hidden": "true" });
+  const svg = svgEl("svg", { viewBox: "0 0 48 22", class: "spark", "aria-hidden": "true" });
   svg.append(svgEl("polyline", { points }));
   return svg;
 }
@@ -124,41 +147,33 @@ function sparkline(trend) {
 const favMark = (e) => (state.favorites.some((f) => f.id === e.id)
   ? h("span", { class: "fav-mark", role: "img", "aria-label": "즐겨찾기" }, "★") : null);
 
-// 즐겨찾기·전체 품목·검색 결과의 한 줄: 왼쪽 이름과 단위, 가운데 30일 그래프, 오른쪽 단위 가격과 평년 대비 %.
+// 즐겨찾기·전체 품목·검색 결과의 한 줄: 왼쪽 이름과 평년 비교 한 마디, 가운데 30일 그래프, 오른쪽 단위 가격과 단위.
 // markFav: 전체 품목과 검색 결과에서 즐겨찾기에 든 품목이면 이름 뒤에 ★를 붙인다(즐겨찾기 칸 안은 모두 즐겨찾기라 뺀다).
 function rowNode(e, markFav) {
-  const pct = pctText(e.change.normal);
-  const tag = e.signal === "싼 편" ? "down" : e.signal === "비싼 편" ? "up" : null;
+  const normal = normalText(e);
   return h("li", {},
     h("a", { class: "row", href: itemHref(e.id) },
       h("span", { class: "row__name" }, displayName(e), markFav ? favMark(e) : null,
-        h("span", { class: "row__sub" }, perUnit(e),
-          tag ? [" · ", h("span", { class: tag }, e.signal)] : null,
+        h("span", { class: "row__sub" }, h("span", { class: normal.cls || null }, normal.text),
           // 일부 품종만 받지 못한 날은 그 품종이 옛 값이다.
-          e.as_of !== state.data.as_of ? ` · ${md(e.as_of)} 값` : null)),
+          e.as_of !== state.data.as_of ? mini(`${md(e.as_of)} 값`) : null)),
       sparkline(e.trend) || h("span", {}),
-      h("span", { class: "row__price" }, won(e.unit_price),
-        h("span", { class: `row__pct ${pct.cls}` }, pct.text))));
+      h("span", { class: "row__price" }, wonNode(e.unit_price), h("span", { class: "row__unit" }, perUnit(e)))));
 }
 
-const emartTag = () => h("span", { class: "tag" }, "이마트");
-
-// 이마트 상품의 한 줄: 왼쪽 상품명과 "평소 값", 오른쪽 평소 값과 행사 때 최저 값. 그래프 칸은 없다(조사가 6번뿐).
+// 이마트 상품의 한 줄: 왼쪽 상품명과 행사 때 최저 값, 오른쪽 평소 값. 그래프 칸은 없다(조사가 6번뿐).
 // showTag: 검색 결과와 즐겨찾기처럼 KAMIS 품종과 섞이는 곳에서 "이마트" 표시를 붙인다.
 function emartRowNode(e, showTag, markFav) {
   return h("li", {},
     h("a", { class: "row row--emart", href: itemHref(e.id) },
       h("span", { class: "row__name" }, e.name, markFav ? favMark(e) : null,
-        h("span", { class: "row__sub" }, showTag ? emartTag() : null,
-          e.low ? "평소 값" : "평소 값 · 행사 없음",
+        h("span", { class: "row__sub" }, showTag ? mini("이마트") : null,
+          e.low ? h("span", { class: "down" }, `행사 때 ${won(e.low.price)}`) : "행사 없음",
           // 지점이 한두 곳뿐인 값은 덜 믿을 만해서 알린다.
-          e.stores <= 2 ? ` · 이마트 ${e.stores}곳` : null,
+          e.stores <= 2 ? mini(`이마트 ${e.stores}곳`) : null,
           // 마지막 조사일에 값이 없던 상품은 그 전 값이다.
-          e.last_day !== state.emart.as_of ? ` · ${md(e.last_day)} 값` : null)),
-      h("span", { class: "row__price" }, won(e.usual),
-        e.low
-          ? h("span", { class: "row__pct down" }, `행사 ${e.low.price.toLocaleString("ko-KR")}`)
-          : h("span", { class: "row__pct muted" }, "-"))));
+          e.last_day !== state.emart.as_of ? mini(`${md(e.last_day)} 값`) : null)),
+      h("span", { class: "row__price" }, wonNode(e.usual), h("span", { class: "row__unit" }, "평소 값"))));
 }
 
 const itemRow = (e, showTag, markFav) => (e.emart ? emartRowNode(e, showTag, markFav) : rowNode(e, markFav));
@@ -168,9 +183,9 @@ const itemRow = (e, showTag, markFav) => (e.emart ? emartRowNode(e, showTag, mar
 function missingRowNode(fav) {
   const emart = fav.id.startsWith(EMART_ID);
   return h("li", {},
-    h("a", { class: "row", href: itemHref(fav.id) },
+    h("a", { class: "row row--missing", href: itemHref(fav.id) },
       h("span", { class: "row__name" }, fav.name || fav.id,
-        h("span", { class: "row__sub" }, emart ? emartTag() : null,
+        h("span", { class: "row__sub" }, emart ? mini("이마트") : null,
           emart && !state.emart ? "이마트 값 받는 중" : "지금 값 없음"))));
 }
 
@@ -216,18 +231,21 @@ function renderHome() {
   const filters = signalLists();
   const blocks = state.filter && filters.has(state.filter)
     ? [[state.filter, filters.get(state.filter),
-        `${state.filter} · 평년보다 ${Math.round(state.data.threshold_pct)}% 이상 ${state.filter === "싼 편" ? "싸요" : "비싸요"}`]]
+        `평년보다 ${Math.round(state.data.threshold_pct)}% 넘게 ${state.filter === "싼 편" ? "싼" : "비싼"} 품종`]]
     : [...byCategory].map(([c, list]) => [c, list, c]);
-  const chip = (c, count, onclick) =>
+  // 칸과 부류 제목은 이름 뒤에 흐린 개수를 따로 붙인다("채소류 43").
+  const count = (n) => h("span", { class: "chip__n" }, n);
+  const chip = (c, n, onclick) =>
     h("button", { type: "button", class: c === state.chip || c === state.filter ? "chip chip--on" : "chip",
-                  "data-category": c, onclick }, `${c} ${count}`);
+                  "data-category": c, onclick }, c, count(n));
   view.append(h("section", { class: "section" },
     h("h2", { class: "sec" }, "전체 품목"),
     h("nav", { class: "chips", "aria-label": "부류" },
       [...filters].map(([c, list]) => chip(c, list.length, () => toggleFilter(c))),
       [...byCategory].map(([c, list]) => chip(c, list.length, () => jumpTo(c)))),
     blocks.map(([c, list, title]) => h("section", { class: "cat-block", id: `cat-${c}`, "data-category": c },
-      h("h3", { class: "cat" }, title), h("ul", { class: "rows" }, list.map((e) => itemRow(e, false, true)))))));
+      h("h3", { class: "cat" }, title, count(list.length)),
+      h("ul", { class: "rows" }, list.map((e) => itemRow(e, false, true)))))));
   // 다시 그려도, 상세에 갔다 와도 옆으로 밀어 둔 부류 칸 줄 위치를 그대로 둔다(render가 지우기 전에 적어 둔다).
   view.querySelector(".chips").scrollLeft = state.chipsLeft;
 }
@@ -359,8 +377,11 @@ function toggleFilter(name) {
   window.scrollTo(0, first.getBoundingClientRect().top + window.scrollY - coveredHeight());
 }
 
-// 위에 붙은 막대와 부류 칸 줄의 높이. 그 아래부터가 목록이 보이는 자리다.
-const coveredHeight = () => $("bar-home").offsetHeight + document.querySelector(".chips").offsetHeight;
+// 화면 맨 위에 붙은 부류 칸 줄이 가리는 높이(칸 줄 높이 + 위 안전 영역). 그 아래부터가 목록이 보이는 자리다.
+function coveredHeight() {
+  const chips = document.querySelector(".chips");
+  return chips.offsetHeight + parseFloat(getComputedStyle(chips).top);
+}
 
 // 칸을 칠하고, 칸 줄에서 그 칸이 보이게 옆으로 민다. 칸 줄만 밀어 화면 전체가 옆으로 밀리지 않게 한다.
 function markChip(category) {
@@ -456,7 +477,7 @@ function renderSearch() {
     view.append(h("p", { class: "found" }, `"${q}"에 맞는 품목이 없어요. 다른 이름으로 찾아 보세요.`));
     return;
   }
-  view.append(h("p", { class: "found" }, `"${q}" 찾은 품종 ${found.length}개`),
+  view.append(h("p", { class: "found" }, `"${q}"${ro(q)} 찾은 품종 ${found.length}개`),
     h("ul", { class: "rows" }, found.map((e) => itemRow(e, true, true))));
 }
 
@@ -702,10 +723,12 @@ function render() {
   if (chips) state.chipsLeft = chips.scrollLeft;
   renderTop();
   const match = location.hash.match(/^#\/item\/(.+)$/);
-  $("bar-home").hidden = Boolean(match);
+  $("search-form").hidden = Boolean(match);
   $("bar-detail").hidden = !match;
   $("home-head").hidden = Boolean(match);
   $("search-clear").hidden = !state.query;
+  // 검색 중에는 제목과 안내 쪽지를 숨기고 띠만 남긴다(CSS).
+  document.body.classList.toggle("searching", Boolean(state.query) && !match);
   if (match) renderDetail(decodeId(match[1]));
   else if (state.query) renderSearch();
   else renderHome();

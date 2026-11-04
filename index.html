@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#121417" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <meta name="description" content="대형마트 가격표가 적당한지 KAMIS 소매가격으로 바로 비교해요.">
   <meta name="apple-mobile-web-app-title" content="장보기 가격">
   <title>장보기 가격</title>
@@ -15,23 +15,19 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header id="bar-home" class="bar">
-    <form id="search-form" class="search" role="search">
-      <input id="search" type="search" placeholder="품목 검색 (예: 양파)" autocomplete="off"
-             enterkeyhint="search" aria-label="품목 검색">
-      <button type="button" id="search-clear" class="search__clear" aria-label="검색 지우기" hidden>✕</button>
-    </form>
-  </header>
   <header id="bar-detail" class="bar bar--detail" hidden>
     <button type="button" id="back" class="icon-btn" aria-label="뒤로">←</button>
     <button type="button" id="star" class="icon-btn" aria-label="즐겨찾기에 넣기" aria-pressed="false">☆</button>
   </header>
 
   <div id="home-head" class="head">
-    <p id="asof" class="head__asof"></p>
-    <p id="print-sample" class="band band--sample" hidden>샘플 데이터 · 실제 가격 아님</p>
+    <div id="home-title">
+      <h1 class="head__title">장보기 가격</h1>
+      <p id="asof" class="head__asof"></p>
+    </div>
+    <p id="print-sample" class="band" hidden>샘플 값이에요. 실제 가격이 아니에요.</p>
     <p id="print-offline" class="band" hidden></p>
-    <p id="print-stale" class="band band--warn" hidden></p>
+    <p id="print-stale" class="band" hidden></p>
     <div id="banner-install" class="note" hidden>
       <span>홈 화면에 추가하면 앱처럼 쓰고, 인터넷 없이도 열려요</span>
       <button type="button" id="install-close">닫기</button>
@@ -39,6 +35,15 @@
   </div>
 
   <main id="view" class="view" tabindex="-1"></main>
+
+  <!-- 아래 검색창: 한 손으로 쥐었을 때 엄지가 닿는 곳 -->
+  <form id="search-form" class="search" role="search">
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+         aria-hidden="true"><circle cx="9" cy="9" r="6"/><path d="M13.5 13.5 17 17"/></svg>
+    <input id="search" type="search" placeholder="품목 검색 (예: 양파)" autocomplete="off"
+           enterkeyhint="search" aria-label="품목 검색">
+    <button type="button" id="search-clear" class="search__clear" aria-label="검색 지우기" hidden>✕</button>
+  </form>
   <div id="toast" class="toast" role="status" hidden>
     <span id="toast-text"></span>
     <button type="button" id="toast-undo">되돌리기</button>
