@@ -840,8 +840,33 @@ function setupInstallHint() {
   });
 }
 
+// 자판이 가린 높이를 --kb에 넣는다. 아래 검색창, 가격표 받침, 띠가 그만큼 올라가 자판 바로 위에 붙는다.
+// 아이폰은 자판이 올라와도 창 높이(innerHeight)가 그대로라, 지금 보이는 영역(visualViewport)과의 차이가 자판 높이다.
+// 안드로이드는 viewport 메타의 interactive-widget=resizes-content로 창이 자판만큼 줄어 이 값이 0에 가깝다.
+function setupKeyboardInset() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  let queued = false;
+  const update = () => {
+    queued = false;
+    const inset = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+    document.documentElement.style.setProperty("--kb", `${inset}px`);
+  };
+  // 한 화면을 그릴 때 한 번만 잰다.
+  const queue = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(update);
+  };
+  vv.addEventListener("resize", queue);
+  vv.addEventListener("scroll", queue);
+  document.addEventListener("focusin", queue);
+  document.addEventListener("focusout", queue);
+}
+
 async function init() {
   setupInstallHint();
+  setupKeyboardInset();
   if ("serviceWorker" in navigator) {
     // 새 화면 파일을 다 받은 서비스 워커가 자리를 잡으면 한 번 다시 연다. 안 그러면 다음에 열 때까지 옛 화면이 남는다.
     // 처음 설치할 때(전에 맡은 서비스 워커가 없을 때)는 이미 새 화면이라 다시 열지 않는다.
