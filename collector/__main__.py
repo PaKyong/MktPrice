@@ -9,6 +9,7 @@
 
 import os
 import sys
+from collections import defaultdict
 from dataclasses import replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -31,7 +32,7 @@ from collector.output import (
     should_skip,
     write_prices,
 )
-from collector.parse import KamisError, parse_national, parse_period
+from collector.parse import KamisError, parse_category, parse_period
 
 KST = ZoneInfo("Asia/Seoul")
 
@@ -83,6 +84,38 @@ def _fill_past(source: Source, overall: Dict[Tuple[str, str, str], OverallRow], 
     return filled
 
 
+def _livestock_points(source: Source, overall: Dict[Tuple[str, str, str], OverallRow], as_of: date,
+                      today: date) -> Dict[Tuple[str, str, str], List[Tuple[date, int]]]:
+    """축산물 줄마다 기준일부터 거꾸로 31일의 날짜별 전국 평균을 모은다(2026-11-04 결정).
+
+    부류별 API를 하루에 한 번씩 불러 그날의 당일 값을 모은다. 한 번 부르면 축산물 모든 줄이 오고,
+    기준일 것은 이미 받은 전체 평균 줄을 쓴다. 큰 가격, 그래프, 평년 %가 모두 같은 API의 같은 날짜
+    값이 된다. 받기에 실패한 날은 건너뛴다(그래프에서 그날만 빠진다).
+
+    Args:
+        source: KAMIS 또는 샘플 받기 쪽.
+        overall: 품종별 전체 평균 줄(기준일 것).
+        as_of: 기준일.
+        today: 날짜 글자의 연도를 정할 기준 날짜.
+
+    Returns:
+        (품목 코드, 품종 코드, 등급 번호) → (날짜, 당일 값) 목록.
+    """
+    points: Dict[Tuple[str, str, str], List[Tuple[date, int]]] = defaultdict(list)
+    for key, row in overall.items():
+        if row.category_code == LIVESTOCK and row.today is not None:
+            points[key].append((row.as_of, row.today))
+    for back in range(1, WINDOW_DAYS):
+        try:
+            rows = parse_category(source.category(LIVESTOCK, as_of - timedelta(days=back)), LIVESTOCK, today)
+        except KamisError:
+            continue
+        for row in rows:
+            if row.today is not None:
+                points[_row_key(row)].append((row.as_of, row.today))
+    return points
+
+
 def _row_key(x: Any) -> Tuple[str, str, str]:
     """품종이나 전체 평균 줄을 (품목 코드, 품종 코드, 등급 번호)로 나타낸다."""
     return (x.item_code, x.kind_code, x.rank_code)
@@ -102,10 +135,11 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
     3. 전체 평균의 당일 날짜(값이 있는 줄) 가운데 가장 늦은 날을 기준일로 삼고, 기존 파일과
        기준일·출처가 같으면 건너뛴다. 1개월 전·1년 전 값이 통째로 빈 부류는 가까운 조사일
        값으로 채운다.
-    4. 품종마다 기준일부터 거꾸로 31일의 가게 값(축산물은 날짜별 전국 평균)을 받아 항목을
-       만든다. 전체 평균의 조사 단위가 품종 목록 파일과 다르면 그 품종은 실패로 다룬다.
-    5. 한 줄 요약을 찍고, 결과가 수상하면(새 항목이 없음, 전체 평균과 맞은
-       품종이 없음) 기존 파일을 지키려고 멈춘다.
+    4. 품종마다 기준일부터 거꾸로 31일의 가게 값을 받아 항목을 만든다. 축산물은 가게별 값이
+       없어, 부류별 API를 날마다 불러 모은 전국 평균으로 만든다. 전체 평균의 조사 단위가 품종
+       목록 파일과 다르면 그 품종은 실패로 다룬다.
+    5. 한 줄 요약(축산물은 따로 한 줄, 빠진 축산물은 이름까지)을 찍고, 결과가 수상하면(새 항목이
+       없음, 전체 평균과 맞은 품종이 없음) 기존 파일을 지키려고 멈춘다.
     6. 실패한 품종은 기존 항목을 남기되(기존 파일 출처가 같을 때만), 새 파일을
        통째로 바꿔 넣는다.
 
@@ -145,12 +179,16 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
     if not force and should_skip(existing, as_of, source.name):
         return "skipped"
     overall = _fill_past(source, overall, as_of, today)
+    livestock = [item for item in items if item.category_code == LIVESTOCK]
+    points = (_livestock_points(source, overall, as_of, today)
+              if livestock and LIVESTOCK not in failed_categories else {})
 
     start = as_of - timedelta(days=WINDOW_DAYS - 1)
     entries: List[Dict[str, Any]] = []
     failed_ids: Set[str] = set()
     unit_mismatch: List[str] = []
     no_store_value = 0
+    livestock_missing: List[str] = []
     matched = 0
     for item in items:
         if item.category_code in failed_categories:
@@ -162,23 +200,33 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
             unit_mismatch.append(f"{item.id}({item.unit}→{row.unit})")
             failed_ids.add(item.id)
             continue
-        try:
-            raw = source.period(item, start, as_of)
+        if item.category_code == LIVESTOCK:
             # 축산물은 가게별 값이 없어 날짜별 전국 평균으로 만든다(설계 18절).
-            entry = (build_national_entry(item, row, parse_national(raw), as_of) if item.category_code == LIVESTOCK
-                     else build_entry(item, row, parse_period(raw), as_of))
-        except KamisError:
-            failed_ids.add(item.id)
-            continue
-        if entry is None:
-            no_store_value += 1
-            continue
+            entry = build_national_entry(item, row, points.get(_row_key(item), []), as_of)
+            if entry is None:
+                livestock_missing.append(f"{item.item_name} {item.kind_name}")
+                continue
+        else:
+            try:
+                stores = parse_period(source.period(item, start, as_of))
+            except KamisError:
+                failed_ids.add(item.id)
+                continue
+            entry = build_entry(item, row, stores, as_of)
+            if entry is None:
+                no_store_value += 1
+                continue
         entries.append(entry)
         matched += row is not None
 
     print(f"{source.name} {as_of}: 새 항목 {len(entries)}개, "
           f"{'대형유통' if LARGE_ONLY else '가게'} 값이 없어 빠진 품종 {no_store_value}개, "
           f"전체 평균과 맞은 품종 {matched}개, 받지 못한 품종 {len(failed_ids)}개")
+    if livestock:
+        # 축산물은 철이 없으니 값이 없어 빠진 품종이 있으면 이상한 것이라 이름까지 남긴다.
+        made = sum(entry["category"] == CATEGORIES[LIVESTOCK] for entry in entries)
+        print(f"축산물 새 항목 {made}개, 값이 없어 빠진 품종 {len(livestock_missing)}개"
+              + (f"({', '.join(livestock_missing)})" if livestock_missing else ""))
     if unit_mismatch:
         print(f"단위가 다른 품종 {len(unit_mismatch)}개(목록 파일→KAMIS): {', '.join(unit_mismatch)}. "
               "`uv run python -m collector.make_items`로 품종 목록을 다시 만드세요.")

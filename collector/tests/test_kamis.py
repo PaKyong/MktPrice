@@ -18,10 +18,6 @@ APPLE = Item(
     kind_code="05", kind_name="홍로", rank_code="04", unit="10개", measure="count",
     amount=10.0, unit_label="개")
 DAY = date(2026, 11, 2)
-BEEF = Item(
-    id="4301-22-02", category_code="500", category_name="축산물", item_code="4301", item_name="한우",
-    kind_code="22", kind_name="등심 1+등급", rank_code="02", unit="100g", measure="weight",
-    amount=100.0, unit_label="100g")
 
 
 class FakeOpener:
@@ -214,18 +210,3 @@ def test_past_overall_gives_up_quietly() -> None:
     src = DaySource(last_day=None)
     assert past_overall(src, "200", date(2026, 10, 4), date(2026, 11, 4)) == []
     assert len(src.days) == LOOKBACK_DAYS
-
-
-def test_period_request_for_livestock_uses_item_period_api() -> None:
-    # 가게별 기간 API는 축산물에 가게 줄이 없고 한우 등급을 가리지 않아, 품목별 기간 API를 부른다.
-    opener = FakeOpener([b'{"data": ["001"]}'])
-    KamisSource("k", "me", opener=opener, sleep=no_sleep).period(BEEF, date(2026, 10, 4), date(2026, 11, 3))
-    for part in ["action=periodProductList", "p_productclscode=01", "p_startday=2026-10-04",
-                 "p_endday=2026-11-03", "p_itemcategorycode=500", "p_itemcode=4301", "p_kindcode=22",
-                 "p_productrankcode=02", "p_returntype=json", "p_convert_kg_yn=N"]:
-        assert part in opener.urls[0]
-    # 이 API는 등급이 하나인 줄(돼지 "00")을 "01"로 부른다.
-    pork = Item(**{**BEEF.__dict__, "id": "4304-27-00", "item_code": "4304", "kind_code": "27", "rank_code": "00"})
-    opener = FakeOpener([b'{"data": ["001"]}'])
-    KamisSource("k", "me", opener=opener, sleep=no_sleep).period(pork, date(2026, 10, 4), date(2026, 11, 3))
-    assert "p_productrankcode=01" in opener.urls[0]

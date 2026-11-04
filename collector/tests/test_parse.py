@@ -9,7 +9,6 @@ from collector.parse import (
     is_large_retail,
     parse_category,
     parse_day,
-    parse_national,
     parse_period,
     parse_price,
 )
@@ -108,16 +107,3 @@ def test_parse_period_skips_summary_and_empty_rows() -> None:
     rows = parse_period(raw)
     assert [(r.market, r.price, r.large) for r in rows] == [("B-유통", 3250, True), ("경동", 2900, False)]
     assert rows[0].day == date(2026, 11, 2)
-
-
-def test_parse_national_reads_average_rows_one_day_later() -> None:
-    raw = {"data": {"error_code": "000", "item": [
-        {"countyname": "평균", "marketname": [], "yyyy": "2026", "regday": "11/02", "price": "2,937"},
-        {"countyname": "평년", "marketname": [], "yyyy": "2026", "regday": "11/02", "price": "2,585"},
-        {"countyname": "전국", "marketname": [], "yyyy": "2026", "regday": "11/02", "price": "2,937"},
-        {"countyname": "평균", "marketname": [], "yyyy": "2026", "regday": "12/31", "price": "3,000"},
-        {"countyname": "평균", "marketname": [], "yyyy": "2026", "regday": "11/03", "price": "0"},
-        {"countyname": "평균", "marketname": [], "yyyy": "2026", "regday": "엉망", "price": "1"},
-    ]}}
-    assert parse_national(raw) == [(date(2026, 11, 3), 2937), (date(2027, 1, 1), 3000)]
-    assert parse_national({"data": ["001"]}) == []

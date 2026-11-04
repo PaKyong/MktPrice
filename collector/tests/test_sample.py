@@ -5,7 +5,7 @@ from datetime import date
 from collector.items import ITEMS_PATH, build_items, load_items
 from collector.make_items import TOP_RANK_CODE
 from collector.make_sample import build_sample
-from collector.parse import parse_category, parse_national, parse_period
+from collector.parse import parse_category, parse_period
 
 AS_OF = date(2026, 11, 2)
 
@@ -42,10 +42,3 @@ def test_sample_signals_are_spread() -> None:
 def test_sample_is_repeatable() -> None:
     items = load_items(ITEMS_PATH)
     assert build_sample(items, AS_OF) == build_sample(items, AS_OF)
-
-
-def test_sample_livestock_is_national_average_one_day_earlier() -> None:
-    items = [i for i in load_items(ITEMS_PATH) if i.category_code == "500"]
-    _, periods = build_sample(items, AS_OF)
-    assert parse_period(periods[items[0].id]) == []
-    assert max(day for day, _ in parse_national(periods[items[0].id])) == AS_OF

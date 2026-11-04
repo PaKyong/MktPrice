@@ -1,7 +1,7 @@
 """수집 순서 전체(run) 시험."""
 
 import json
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Set
 
@@ -299,16 +299,57 @@ def test_main_reads_force_flag(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
     assert calls == [True, False]
 
 
-def test_run_livestock_uses_national_average(tmp_path: Path) -> None:
+class LivestockDaySource(FailingSource):
+    """샘플을 읽되, 축산물 부류는 부른 날짜마다 그날 날짜와 값(일 × 100원)으로 바꿔 주는 받기 쪽.
+
+    10-20은 받기에 실패하고, 닭 절단육은 실제처럼 늘 0원이다. 축산물에 기간 API를 부르면 시험이 실패한다.
+    """
+
+    def __init__(self, inner: SampleSource) -> None:
+        """샘플 받기 쪽을 감싸고, 축산물 부류를 부른 날짜를 모은다."""
+        super().__init__(inner)
+        self.livestock_days: List[date] = []
+
+    def category(self, category_code: str, day: date) -> Dict[str, Any]:
+        """축산물이면 그날 날짜와 값으로 바꾼 샘플 응답을 준다."""
+        raw = self.inner.category(category_code, day)
+        if category_code != "500":
+            return raw
+        self.livestock_days.append(day)
+        if day == date(2026, 10, 20):
+            raise KamisError("시험용 실패")
+        raw = json.loads(json.dumps(raw))
+        for row in raw["data"]["item"]:
+            row["day1"] = f"당일 ({day:%m/%d})"
+            row["dpr1"] = "0" if row["kind_name"] == "절단육" else f"{day.day * 100:,}"
+        return raw
+
+    def period(self, item: Item, start: date, end: date) -> Dict[str, Any]:
+        """농수산물만 가게별 값을 부른다(축산물을 부르면 실패)."""
+        assert item.category_code != "500"
+        return self.inner.period(item, start, end)
+
+
+def test_run_livestock_trend_comes_from_daily_category_calls(tmp_path: Path, capsys: Any) -> None:
     out = tmp_path / "prices.json"
-    items = ITEMS + [LIVESTOCK_ITEM]
+    livestock = [i for i in ALL_ITEMS if i.category_code == "500"]
+    items = ITEMS + livestock
     write_sample(tmp_path / "sample", items, date(2026, 11, 2))
-    assert run(SampleSource(tmp_path / "sample"), items, out, date(2026, 11, 2)) == "updated"
-    e = next(e for e in read(out)["items"] if e["id"] == LIVESTOCK_ITEM.id)
-    assert (e["category"], e["as_of"]) == ("축산물", "2026-11-02")
+    src = LivestockDaySource(SampleSource(tmp_path / "sample"))
+    assert run(src, items, out, date(2026, 11, 2)) == "updated"
+    entries = {e["id"]: e for e in read(out)["items"] if e["category"] == "축산물"}
+    assert len(entries) == len(livestock) - 1
+    e = entries[LIVESTOCK_ITEM.id]
+    assert (e["as_of"], e["price"]) == ("2026-11-02", 200)
     assert e["stores"] is None and e["range"] is None and e["unit_range"] is None
-    assert e["trend"][-1] == ["2026-11-02", e["price"]]
+    # 기준일부터 거꾸로 31일 가운데 받기에 실패한 10-20만 빠진다. 큰 가격과 그래프 끝 값은 같은 날 값이다.
+    window = [date(2026, 10, 3) + timedelta(days=k) for k in range(31)]
+    assert e["trend"] == [[d.isoformat(), d.day * 100] for d in window if d != date(2026, 10, 20)]
     assert e["change"]["normal"] is not None
+    # 기준일 것은 이미 받은 값을 쓰고, 나머지 30일만 더 부른다.
+    assert sorted(d for d in src.livestock_days if d < date(2026, 11, 2)) == window[:-1]
+    log = capsys.readouterr().out
+    assert "축산물 새 항목 28개, 값이 없어 빠진 품종 1개(닭고기 절단육)" in log
 
 
 class MorningSource(FailingSource):
