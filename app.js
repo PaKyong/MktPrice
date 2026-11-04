@@ -22,10 +22,6 @@ const md = (iso) => {
   const [, m, d] = iso.split("-");
   return `${Number(m)}월 ${Number(d)}일`;
 };
-const mdot = (iso) => {
-  const [, m, d] = iso.split("-");
-  return `${Number(m)}.${Number(d)}`;
-};
 // 상품명에 %가 든 이마트 상품이 있어 주소에 넣을 때는 늘 인코딩한다.
 const itemHref = (id) => `#/item/${encodeURIComponent(id)}`;
 // 메신저가 주소를 풀어서 보내면 "82%(86g)"처럼 뒤에 16진수 두 자리가 없는 %가 와서 풀기가 실패한다.
@@ -59,12 +55,11 @@ function ro(word) {
   return final === 0 || final === 8 ? "로" : "으로";
 }
 
-// 평년 대비 같은 %: 내리면 빨강 ▼, 오르면 파랑 ▲. 반올림해 0이면 흐린 0%, 값이 없으면 흐린 -.
-function pctText(x) {
-  if (x === null || x === undefined) return { text: "-", cls: "muted" };
-  const r = Math.round(x);
-  if (r === 0) return { text: "0%", cls: "muted" };
-  return r < 0 ? { text: `▼${-r}%`, cls: "down" } : { text: `▲${r}%`, cls: "up" };
+// 지난 값 비교 한 마디: "15% 올랐어요"(파랑), "48% 내렸어요"(빨강), 반올림해 0이면 "같아요".
+function changeText(v) {
+  const r = Math.round(Math.abs(v));
+  if (r === 0) return { text: "같아요", cls: "" };
+  return v < 0 ? { text: `${r}% 내렸어요`, cls: "down" } : { text: `${r}% 올랐어요`, cls: "up" };
 }
 
 // 작은 요소 만들기 도우미. 글자는 textContent로만 넣는다.
@@ -325,7 +320,12 @@ function setupFavGestures(ul) {
       const fav = state.favorites.find((f) => f.id === id);
       await removeFavorite(id);
       await refresh();
-      showUndo(fav, start);
+      // 5초 동안 되돌릴 수 있다. 되돌리면 원래 자리로 넣는다.
+      showToast(`${fav.name || fav.id}, 즐겨찾기에서 뺐어요`, async () => {
+        await addFavorite(fav.id, fav.name);
+        await moveFavorite(fav.id, start);
+        await refresh();
+      });
     }
   });
   ul.addEventListener("touchcancel", reset);
@@ -339,21 +339,21 @@ function setupFavGestures(ul) {
   ul.addEventListener("contextmenu", (ev) => ev.preventDefault());
 }
 
-// 밀어서 뺀 즐겨찾기를 5초 동안 되돌릴 수 있게 아래에 띠를 띄운다.
-let undoTimer = null;
-function showUndo(fav, index) {
+// 아래에 잠깐 띄우는 띠. onUndo가 있으면 "되돌리기" 단추를 붙여 5초, 없으면 2초 보인다.
+let toastTimer = null;
+function showToast(text, onUndo) {
   const toast = $("toast");
-  $("toast-text").textContent = `${fav.name || fav.id} · 즐겨찾기에서 뺐어요`;
-  toast.hidden = false;
-  clearTimeout(undoTimer);
-  undoTimer = setTimeout(() => { toast.hidden = true; }, 5000);
-  $("toast-undo").onclick = async () => {
-    clearTimeout(undoTimer);
+  const undo = $("toast-undo");
+  $("toast-text").textContent = text;
+  undo.hidden = !onUndo;
+  undo.onclick = onUndo ? async () => {
+    clearTimeout(toastTimer);
     toast.hidden = true;
-    await addFavorite(fav.id, fav.name);
-    await moveFavorite(fav.id, index);
-    await refresh();
-  };
+    await onUndo();
+  } : null;
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.hidden = true; }, onUndo ? 5000 : 2000);
 }
 
 // 신호가 "싼 편"·"비싼 편"인 KAMIS 품종. 평년 대비 차이가 큰 것부터. 없는 쪽은 칸을 두지 않는다.
@@ -483,45 +483,55 @@ function renderSearch() {
 
 // ---- 상세 ----
 
-// 상세의 30일 그래프. 큰 글씨와 같은 단위 가격(100g당, 1개당)으로 그리고, 아래에 처음·끝 날짜를 쓴다.
+// 상세의 30일 그래프. 큰 글씨와 같은 단위 가격(100g당, 1개당)으로 그린다. 마지막 값 높이에 점선을 긋고,
+// 가장 높은·낮은 점 곁에 값을, 아래 양 끝에 처음·끝 날짜를 쓴다. 값이 둘 이상일 때만 부른다.
 // 조사 단위 값에 (단위 가격 ÷ 조사 단위 값)을 곱해 바꾼다. 오늘 값은 큰 글씨와 똑같고, 다른 날은 1원 안쪽으로 맞다.
 function trendChart(e) {
   const values = e.trend.map(([, v]) => Math.round((v * e.unit_price) / e.price));
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 1;
-  const w = 320;
-  const top = 18;
-  const bottom = 74;
-  const x = (i) => (values.length === 1 ? w - 4 : 4 + (i / (values.length - 1)) * (w - 8));
+  const w = 335;
+  const top = 26;
+  const bottom = 96;
+  const x = (i) => 3 + (i / (values.length - 1)) * (w - 10);
   const y = (v) => bottom - ((v - min) / span) * (bottom - top);
   const points = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-  const svg = svgEl("svg", { viewBox: `0 0 ${w} 100`, class: "chart", role: "img",
+  // "최고 659"·"최저 559": 글자가 그림 밖으로 나가지 않게 양옆 34px 안쪽에, 날짜 줄과 겹치지 않게 118 위에 둔다.
+  const mark = (word, v, dy) => {
+    const cx = Math.min(Math.max(x(values.indexOf(v)), 34), w - 34);
+    const text = svgEl("text", { x: cx, y: Math.min(y(v) + dy, 118), "text-anchor": "middle", class: "chart__label" },
+      `${word} `);
+    text.append(svgEl("tspan", { class: "chart__value num" }, v.toLocaleString("ko-KR")));
+    return text;
+  };
+  const last = values.at(-1);
+  const svg = svgEl("svg", { viewBox: `0 0 ${w} 142`, class: "chart", role: "img",
                              "aria-label": `최근 30일 ${perUnit(e)} 평균: 최저 ${won(min)}, 최고 ${won(max)}` });
   svg.append(
-    svgEl("line", { x1: 0, y1: bottom, x2: w, y2: bottom, class: "chart__base" }),
+    svgEl("line", { x1: 0, y1: y(last), x2: w, y2: y(last), class: "chart__base" }),
     svgEl("polyline", { points, class: "chart__line" }),
-    svgEl("circle", { cx: x(values.length - 1), cy: y(values.at(-1)), r: 3.5, class: "chart__dot" }),
-    svgEl("text", { x: 0, y: 12, class: "chart__label" }, `최고 ${won(max)}`),
-    svgEl("text", { x: w / 2, y: 96, "text-anchor": "middle", class: "chart__label" }, `최저 ${won(min)}`),
-    svgEl("text", { x: w, y: 96, "text-anchor": "end", class: "chart__label" }, mdot(e.trend.at(-1)[0])));
-  if (values.length > 1) svg.append(svgEl("text", { x: 0, y: 96, class: "chart__label" }, mdot(e.trend[0][0])));
+    svgEl("circle", { cx: x(values.length - 1), cy: y(last), r: 4, class: "chart__dot" }),
+    mark("최고", max, -10),
+    mark("최저", min, 22),
+    svgEl("text", { x: 0, y: 138, class: "chart__label" }, md(e.trend[0][0])),
+    svgEl("text", { x: w, y: 138, "text-anchor": "end", class: "chart__label" }, md(e.trend.at(-1)[0])));
   return svg;
 }
 
-// 상세의 가격 막대. 회색 칸(band), 검은 눈금(avg), 점(dots: [값, 칠할 class]), 아래 숫자(nums)와 그 아래 흐린 말(subs)을
-// 그린다. movePin(값)은 막대 위의 노란 가격표 핀을 그 값 자리로 옮긴다. 막대 밖 값은 끝에 붙이고 ◀·▶를 단다.
-// 핀 종이는 화면 밖으로 나가지 않게 막대 안쪽(양옆 여백 6px까지)에 두고, 아래 뾰족한 끝(--tip)만 값 자리를 가리킨다.
+// 가격표 받침의 가격 막대. 진한 칸(band), 흰 눈금(avg), 점(dots: [값, 칠할 class]), 아래 숫자(nums)와 그 아래 흐린 말(subs)을
+// 그린다. movePin(값)은 막대 위의 노란 핀을 그 값 자리로 옮긴다. 막대 밖 값은 끝에 붙이고 ◀·▶를 단다.
+// 핀은 화면 밖으로 나가지 않게 막대 안쪽(양옆 여백 8px까지)에 두고, 아래 뾰족한 끝(--tip)만 값 자리를 가리킨다.
 function priceRuler({ min, max, band, avg, dots = [], nums, subs }) {
   const at = (v) => ((v - min) / (max - min)) * 100;
-  const pinText = h("b");
+  const pinText = h("b", { class: "num" });
   const pin = h("div", { class: "pin", hidden: true }, pinText);
   const node = h("div", { class: "ruler", "aria-hidden": "true" },
     h("div", { class: "ruler__track" }),
     h("div", { class: "ruler__band", style: `left:${at(band[0])}%;width:${at(band[1]) - at(band[0])}%` }),
     avg !== undefined ? h("div", { class: "ruler__avg", style: `left:${at(avg)}%` }) : null,
     dots.map(([v, cls]) => h("div", { class: `ruler__dot ${cls}`, style: `left:${at(v)}%` })),
-    nums.map(([v, text]) => h("div", { class: "ruler__num", style: `left:${at(v)}%` }, text)),
+    nums.map(([v, text]) => h("div", { class: "ruler__num num", style: `left:${at(v)}%` }, text)),
     subs.map(([v, text]) => h("div", { class: "ruler__sub", style: `left:${at(v)}%` }, text)),
     pin);
   const movePin = (v) => {
@@ -532,21 +542,20 @@ function priceRuler({ min, max, band, avg, dots = [], nums, subs }) {
     const w = node.clientWidth;
     const half = pin.offsetWidth / 2;
     const x = (Math.min(100, Math.max(0, p)) / 100) * w;
-    const left = Math.min(w + 6 - half, Math.max(half - 6, x));
+    const left = Math.min(w + 8 - half, Math.max(half - 8, x));
     pin.style.left = `${left}px`;
     pin.style.setProperty("--tip", `${x - left}px`);
   };
   return { node, movePin };
 }
 
-// 상세 정보 줄: 왼쪽 흐린 이름, 오른쪽 값.
+// 상세 정보 줄: 왼쪽 보조 글씨 이름, 오른쪽 값.
 const info = (label, value) => h("li", { class: "info__row" }, h("span", {}, label), h("span", {}, value));
 
-// 상세 위 막대의 ☆/★. 누르면 즐겨찾기에 넣거나 뺀다.
+// 상세 위 막대의 ☆/★. 누르면 즐겨찾기에 넣거나 빼고 아래에 잠깐 띠를 띄운다. 별 모양은 CSS가 aria-pressed로 칠한다.
 // 본문은 다시 그리지 않는다. 철 지난 품종은 즐겨찾기에서 빼면 이름을 알 곳이 없어 제목이 코드로 바뀌기 때문이다.
 function renderStar(id, name, on) {
   const star = $("star");
-  star.textContent = on ? "★" : "☆";
   star.setAttribute("aria-pressed", String(on));
   star.setAttribute("aria-label", on ? "즐겨찾기에서 빼기" : "즐겨찾기에 넣기");
   star.onclick = async () => {
@@ -554,26 +563,38 @@ function renderStar(id, name, on) {
     else await addFavorite(id, name);
     state.favorites = await getFavorites();
     renderStar(id, name, !on);
+    showToast(on ? "즐겨찾기에서 뺐어요" : "즐겨찾기에 넣었어요");
   };
 }
 
-// 상세 화면의 가격표 값 칸. 숫자를 치는 대로 막대 위 핀을 옮기고(movePin), judge(값)이 낸 한 마디와 덧말을
-// 아래에 보인다. 비어 있으면 흐린 안내(hint)를 보인다. 저장하지 않는다.
-function priceTagBox(label, hint, judge, movePin) {
+// 받침이 화면 아래에 붙어 있어서, 그 높이를 --dock-h에 적어 본문 끝과 띠 자리를 그만큼 띄운다.
+const dockObserver = new ResizeObserver(([entry]) =>
+  document.documentElement.style.setProperty("--dock-h", `${entry.target.offsetHeight}px`));
+
+// 상세 아래 가격표 받침: 머리 줄(제목과 막대 뜻 cap), 가격 막대(ruler, 없을 수 있다), 판정, 가격표 값 칸.
+// 숫자를 치는 대로 막대 위 핀을 옮기고 judge(값)이 낸 한 마디와 덧말을 판정 자리에 보인다. 저장하지 않는다.
+function priceDock({ cap, ruler, label, judge }) {
   const result = h("p", { class: "judge__result", "aria-live": "polite" });
-  const showHint = () => result.replaceChildren(h("span", {}, hint));
+  const showHint = () => result.replaceChildren(h("span", { class: "judge__ask" }, "가격표에 적힌 값을 넣으면 바로 알려 줘요"));
   const input = h("input", { type: "text", inputmode: "numeric", placeholder: "값 넣기", autocomplete: "off",
-                             "aria-label": label, enterkeyhint: "done" });
+                             class: "num", "aria-label": label, enterkeyhint: "done" });
   input.addEventListener("input", () => {
     const v = Number(input.value.replace(/[^0-9]/g, ""));
-    movePin?.(v);
+    ruler?.movePin(v);
     if (!(v > 0)) return showHint();
     const verdict = judge(v);
-    result.replaceChildren(h("b", { class: verdict.cls }, verdict.head), h("span", {}, verdict.sub));
+    result.replaceChildren(h("b", { class: verdict.cls || null }, verdict.head), h("span", {}, verdict.sub));
   });
   showHint();
-  return h("form", { class: "judge", onsubmit: (ev) => { ev.preventDefault(); input.blur(); } },
-    h("label", { class: "judge__label" }, h("span", {}, label), input), result);
+  const dock = h("section", { class: "dock", "aria-label": "가격표와 견주기" },
+    h("div", { class: "dock__head" }, h("h2", {}, "가격표와 견주기"), cap ? h("span", {}, cap) : null),
+    ruler?.node, result,
+    h("form", { class: "judge", onsubmit: (ev) => { ev.preventDefault(); input.blur(); } },
+      h("label", { class: "field" }, h("span", { class: "field__name" }, label), input,
+        h("small", { class: "won" }, "원"))));
+  dockObserver.disconnect();
+  dockObserver.observe(dock);
+  return dock;
 }
 
 // KAMIS 품종: 가격표의 단위 가격을 가게 가운데 절반 범위와 평균에 견준다. shops는 "대형마트" 같은 가게 이름.
@@ -586,7 +607,7 @@ function judgeKamis(e, shops) {
     const diff = v - avg;
     const pct = Math.round((Math.abs(diff) / avg) * 100);
     const sub = diff === 0 ? "평균과 같아요"
-      : `평균 ${won(avg)}보다 ${won(Math.abs(diff))}(${pct}%) ${diff > 0 ? "비쌈" : "쌈"}`;
+      : `평균 ${won(avg)}보다 ${won(Math.abs(diff))}(${pct}%) ${diff > 0 ? "비싸요" : "싸요"}`;
     if (v > hi) return { head: few ? `조사한 ${shops} ${e.stores}곳보다 비싸요` : `${shops} 넷 중 셋보다 비싸요`, sub, cls: "up" };
     if (v < lo) return { head: few ? `조사한 ${shops} ${e.stores}곳보다 싸요` : `${shops} 넷 중 셋보다 싸요`, sub, cls: "down" };
     const inside = lo === hi ? `조사한 ${shops} 값과 같아요` : `조사한 ${shops} 값 사이예요`;
@@ -605,39 +626,39 @@ function judgeEmart(e) {
     if (!low) return { head: `평소 값보다 ${won(e.usual - v)} 싸요`, sub: "3개월 동안 본 값 가운데 가장 싸요", cls: "down" };
     if (v < low) return { head: `행사 최저보다도 ${won(low - v)} 싸요`, sub: "3개월 동안 본 값 가운데 가장 싸요", cls: "down" };
     if (v === low) return { head: "행사 때 최저 값이에요", sub: `평소보다 ${won(e.usual - v)} 싸요`, cls: "down" };
-    return { head: `평소 값보다 ${won(e.usual - v)} 싸요`, sub: `행사 때 최저(${won(low)})보다는 비쌈`, cls: "down" };
+    return { head: `평소 값보다 ${won(e.usual - v)} 싸요`, sub: `행사 때 최저(${won(low)})보다는 비싸요`, cls: "down" };
   };
 }
 
-// 이마트 상품 상세: 평소 값, 행사 때 최저 값, 가격 막대, 최근 3개월 조사일별 대표값.
-// 행사가 없었으면 조사 값이 모두 평소 값이라 막대에 보일 것이 없어, 막대 없이 가격표 값 칸만 둔다.
+// 이마트 상품 상세: 평소 값, 행사 때 최저 값, 최근 3개월 조사일별 대표값, 가격표 받침.
+// 행사가 없었으면 조사 값이 모두 평소 값이라 막대에 보일 것이 없어, 막대 없이 판정과 칸만 둔다.
 function renderEmartDetail(e) {
-  const low = e.low ? pctText(e.low.pct) : null;
+  const low = e.low;
   const num = (n) => n.toLocaleString("ko-KR");
-  const ruler = e.low ? priceRuler({
-    min: e.low.price - (e.usual - e.low.price) / 2, max: e.usual + (e.usual - e.low.price) / 2,
-    band: [e.low.price, e.usual],
-    dots: e.history.map(([, price]) => [price, price === e.low.price ? "ruler__dot--low" : ""]),
-    nums: [[e.low.price, num(e.low.price)], [e.usual, num(e.usual)]],
-    subs: [[e.low.price, "행사 최저"], [e.usual, "평소 값"]] }) : null;
-  $("view").append(h("section", { class: "detail" },
-    h("h1", { class: "detail__name" }, e.name),
-    h("p", { class: "detail__meta" },
-      `이마트 · ${e.group ? `${e.group} · ` : ""}${mdot(e.last_day)} 조사 · 이마트 ${e.stores}곳`),
-    h("p", { class: "detail__price" }, won(e.usual), h("span", { class: "detail__unit" }, "평소 값")),
-    e.low
-      ? h("p", { class: "detail__normal down" },
-          `행사 때 ${won(e.low.price)} (${mdot(e.low.day)}) · 평소보다 ${low.text}`)
-      : h("p", { class: "detail__normal muted" }, "3개월 동안 행사 없음"),
-    ruler ? [h("p", { class: "ruler-cap" }, "최근 3개월 동안 이마트에서 본 값이에요"), ruler.node] : null,
-    priceTagBox("가격표 묶음 값",
-      ruler ? "가격표 값을 넣으면 막대 위에 노란 가격표가 꽂혀요" : "가격표 값을 넣으면 평소 값과 견줘 알려 줘요",
-      judgeEmart(e), ruler?.movePin),
-    h("h2", { class: "cat" }, "최근 3개월 조사"),
-    h("ul", { class: "info" }, e.history.map(([day, price]) =>
-      info(mdot(day), day === e.low?.day ? h("span", { class: "down" }, won(price)) : won(price)))),
-    h("p", { class: "detail__foot" },
-      "* 한국소비자원 참가격. 행사 표시가 없어서, 3개월 동안 조사한 이마트 값 중 가장 높은 값을 평소 값으로 봤어요.")));
+  const ruler = low ? priceRuler({
+    min: low.price - (e.usual - low.price) / 2, max: e.usual + (e.usual - low.price) / 2,
+    band: [low.price, e.usual],
+    dots: e.history.map(([, price]) => [price, price === low.price ? "ruler__dot--low" : ""]),
+    nums: [[low.price, num(low.price)], [e.usual, num(e.usual)]],
+    subs: [[low.price, "행사 최저"], [e.usual, "평소 값"]] }) : null;
+  // 행사 때 몇십 원만 내린 상품은 %가 반올림해 0이 되어 원으로 말한다.
+  const off = low ? Math.round(-low.pct) : 0;
+  const lowNote = low && `${md(low.day)}, 평소보다 ${off > 0 ? `${off}%` : won(e.usual - low.price)} 싸요`;
+  $("view").append(
+    h("section", { class: "detail" },
+      h("p", { class: "detail__cat" }, e.group ? `이마트 ${e.group}` : "이마트"),
+      h("h1", { class: "detail__name" }, e.name),
+      h("p", { class: "detail__cap" }, `이마트 ${e.stores}곳 평소 값, ${md(e.last_day)} 조사`),
+      wonNode(e.usual, "detail__price"),
+      h("p", { class: "detail__sig" }, low
+        ? [h("span", { class: "pill pill--down" }, `행사 때 ${won(low.price)}`), h("span", {}, lowNote)]
+        : h("span", { class: "pill" }, "3개월 동안 행사 없음")),
+      h("h2", { class: "sec" }, "최근 3개월 조사"),
+      h("ul", { class: "info" }, e.history.map(([day, price]) =>
+        info(md(day), h("span", { class: day === low?.day ? "num down" : "num" }, won(price))))),
+      h("p", { class: "detail__foot" },
+        "한국소비자원 참가격. 행사 표시가 없어서 3개월 동안 본 값 가운데 가장 높은 값을 평소 값으로 봤어요.")),
+    priceDock({ cap: low ? "진한 칸은 행사 최저부터 평소 값까지" : "", ruler, label: "가격표 값", judge: judgeEmart(e) }));
 }
 
 function renderDetail(id) {
@@ -654,22 +675,23 @@ function renderDetail(id) {
   const name = e ? displayName(e) : fav?.name || id;
   renderStar(id, name, Boolean(fav));
   if (!e) {
-    view.append(h("section", { class: "detail" },
+    view.append(h("section", { class: "detail detail--empty" },
       h("h1", { class: "detail__name" }, name),
       h("p", { class: "empty" }, !id.startsWith(EMART_ID)
-        ? "지금 값 없음. 철이 지나 KAMIS 조사 값이 없는 품목이에요."
+        ? "지금 값이 없어요. 철이 지나 KAMIS 조사 값이 없는 품목이에요."
         : state.emart
           ? "지금 값 없음. 최근 3개월 동안 이마트 조사 값이 없는 상품이에요."
           : "이마트 값을 아직 받지 못했어요. 받으면 바로 보여요.")));
     return;
   }
-  const basis = state.data.basis.compare === "전국 대형유통 평균" ? "대형유통" : "조사처";
-  const shops = basis === "대형유통" ? "대형마트" : "가게";
+  // 비교 기준이 대형유통 평균이면 "대형마트 33곳 평균", 전국 평균으로 바뀌었으면 "조사처 33곳 평균".
+  const who = state.data.basis.compare === "전국 대형유통 평균" ? "대형마트" : "조사처";
+  const shops = who === "대형마트" ? "대형마트" : "가게";
   const num = (n) => n.toLocaleString("ko-KR");
-  const normal = pctText(e.change.normal);
+  const normal = normalText(e);
   const changes = [["1주 전보다", e.change.week], ["1개월 전보다", e.change.month], ["1년 전보다", e.change.year]]
     .filter(([, v]) => v !== null);
-  // 가격 막대: 가게 가운데 절반을 회색 칸, 평균을 눈금으로. 양옆 여백은 칸 폭의 절반, 적어도 평균의 12%.
+  // 가격 막대: 가게 가운데 절반을 진한 칸, 평균을 눈금으로. 양옆 여백은 칸 폭의 절반, 적어도 평균의 12%.
   // 칸 양 끝 숫자가 너무 가까우면(막대 폭의 18% 안쪽) 가운데에 "153~199"로 하나만 쓴다.
   const [lo, hi] = e.unit_range;
   const avg = e.unit_price;
@@ -680,30 +702,26 @@ function renderDetail(id) {
     : (hi - lo) / (max - min) < 0.18 ? [[(lo + hi) / 2, `${num(lo)}~${num(hi)}`]]
       : [[lo, num(lo)], [hi, num(hi)]];
   const ruler = priceRuler({ min, max, band: [lo, hi], avg, nums, subs: [[avg, "평균"]] });
-  view.append(h("section", { class: "detail" },
-    h("h1", { class: "detail__name" }, name),
-    h("p", { class: "detail__meta" },
-      `${e.category} · ${e.as_of.slice(5).replace("-", ".")} 기준 · ${basis} ${e.stores}곳 평균`),
-    h("p", { class: "detail__price" }, won(e.unit_price), h("span", { class: "detail__unit" }, `/${e.unit_label}`)),
-    e.change.normal !== null
-      ? h("p", { class: "detail__normal" }, "평년보다 ", h("span", { class: normal.cls }, normal.text),
-          e.signal ? ` · ${e.signal}` : null)
-      : h("p", { class: "detail__normal muted" }, "평년 값 없음"),
-    h("p", { class: "ruler-cap" }, e.stores >= 4 ? `${perUnit(e)}, ${shops} 절반은 이 사이 값이에요`
-      : `${perUnit(e)}, 조사한 ${shops} ${e.stores}곳 값${lo === hi ? "이에요" : "이 이 사이예요"}`),
-    ruler.node,
-    priceTagBox(`가격표 ${perUnit(e)}`, `가격표에 적힌 ${perUnit(e)} 값을 넣으면 막대 위에 노란 가격표가 꽂혀요`,
-      judgeKamis(e, shops), ruler.movePin),
-    e.trend.length
-      ? [h("p", { class: "chart-cap" }, `30일 · ${perUnit(e)}`), trendChart(e)]
-      : h("p", { class: "muted" }, "추이 값이 없어요"),
-    h("ul", { class: "info" },
-      info(e.unit, won(e.price)),
-      changes.map(([label, v]) => {
-        const p = pctText(v);
-        return info(label, h("span", { class: p.cls }, p.text));
-      })),
-    h("p", { class: "detail__foot" }, "* 평년·지난 값 비교는 KAMIS 전체 평균 기준")));
+  view.append(
+    h("section", { class: "detail" },
+      h("p", { class: "detail__cat" }, e.category),
+      h("h1", { class: "detail__name" }, name),
+      h("p", { class: "detail__cap" }, `${perUnit(e)}, ${who} ${e.stores}곳 평균`),
+      wonNode(e.unit_price, "detail__price"),
+      h("p", { class: "detail__sig" },
+        h("span", { class: normal.cls ? `pill pill--${normal.cls}` : "pill" }, normal.text), h("span", {}, `${md(e.as_of)} 값`)),
+      h("h2", { class: "sec" }, "30일"),
+      e.trend.length >= 2 ? trendChart(e) : h("p", { class: "empty" }, "추이 값이 하루치뿐이에요"),
+      h("h2", { class: "sec" }, "지난 값과 비교"),
+      h("ul", { class: "info" },
+        changes.map(([label, v]) => {
+          const c = changeText(v);
+          return info(label, h("span", { class: c.cls || null }, c.text));
+        }),
+        info(`${e.unit} 값`, h("span", { class: "num" }, won(e.price)))),
+      h("p", { class: "detail__foot" }, "평년과 지난 값은 KAMIS 전체 평균으로 견줘요.")),
+    priceDock({ cap: e.stores >= 4 ? `진한 칸은 ${shops} 가운데 절반` : `진한 칸은 조사한 ${e.stores}곳`,
+                ruler, label: `가격표 ${perUnit(e)}`, judge: judgeKamis(e, shops) }));
 }
 
 // ←: 앱 안에서 들어왔으면 브라우저 뒤로 가기(검색어와 보던 자리가 그대로 남는다).
@@ -729,6 +747,8 @@ function render() {
   $("search-clear").hidden = !state.query;
   // 검색 중에는 제목과 안내 쪽지를 숨기고 띠만 남긴다(CSS).
   document.body.classList.toggle("searching", Boolean(state.query) && !match);
+  // 상세에서는 띠를 가격표 받침 위에 띄운다(CSS).
+  document.body.classList.toggle("detail", Boolean(match));
   if (match) renderDetail(decodeId(match[1]));
   else if (state.query) renderSearch();
   else renderHome();
