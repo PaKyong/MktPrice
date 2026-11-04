@@ -35,7 +35,8 @@ function decodeId(raw) {
 }
 // 품종 이름에 품목 이름이 들어 있으면 품종 이름만 쓴다("양파 · 양파" → "양파", "파 · 대파" → "대파").
 const displayName = (e) => (e.kind.includes(e.item) ? e.kind : `${e.item} ${e.kind}`);
-const perUnit = (e) => (e.measure === "weight" ? "100g당" : `1${e.unit_label}당`);
+// 무게는 "100g당", 부피(우유)는 "100ml당", 개수는 "1개당"·"1포기당".
+const perUnit = (e) => (e.measure === "count" ? `1${e.unit_label}당` : `${e.unit_label}당`);
 
 // 평년 비교 한 마디. 색은 신호가 싼 편이면 빨강(down), 비싼 편이면 파랑(up), 보통이면 없음.
 function normalText(e) {
@@ -185,7 +186,7 @@ function missingRowNode(fav) {
 }
 
 // 장 볼 때 자주 찾는 부류 순서. 여기 없는 부류는 뒤에 붙는다.
-const BROWSE_ORDER = ["채소류", "과일류", "수산물", "식량작물", "특용작물"];
+const BROWSE_ORDER = ["채소류", "과일류", "축산물", "수산물", "식량작물", "특용작물"];
 const orderOf = (c) => (BROWSE_ORDER.includes(c) ? BROWSE_ORDER.indexOf(c) : BROWSE_ORDER.length);
 
 // 전체 품목과 검색 결과의 순서: 부류 → 품목 가나다 → 파일 순서(정렬은 같은 값끼리 원래 순서를 지킨다).
@@ -387,8 +388,8 @@ const MORE_WORDS = {
   계란: ["유정란", "달걀"],
   달걀: ["계란", "유정란"],
   라면: ["너구리", "탕면", "왕뚜껑", "큰사발"],
-  소고기: ["쇠고기"],
-  쇠고기: ["소고기"],
+  소고기: ["쇠고기", "한우"],
+  쇠고기: ["소고기", "한우"],
   생수: ["삼다수", "아이시스"],
   물: ["삼다수", "아이시스"],
   휴지: ["화장지", "3겹"],
@@ -566,9 +567,11 @@ function renderDetail(id) {
   const normal = normalText(e);
   const changes = [["1주 전보다", e.change.week], ["1개월 전보다", e.change.month], ["1년 전보다", e.change.year]]
     .filter(([, v]) => v !== null);
+  // 축산물은 가게별 값이 없어 전국 평균만 있다(조사처 수와 가게 범위가 비어 있다). 막대를 빼고 윗줄을 "전국 평균"으로.
+  const national = e.stores === null;
   // 가격 막대: 가게 가운데 절반을 칸, 평균을 눈금으로. 양옆 여백은 칸 폭의 절반, 적어도 평균의 12%.
   // 칸 양 끝 숫자가 너무 가까우면(막대 폭의 18% 안쪽) 가운데에 "153~199"로 하나만 쓴다.
-  const [lo, hi] = e.unit_range;
+  const [lo, hi] = e.unit_range ?? [e.unit_price, e.unit_price];
   const avg = e.unit_price;
   const pad = Math.max((hi - lo) / 2, avg * 0.12);
   const min = Math.min(lo, avg) - pad;
@@ -585,11 +588,11 @@ function renderDetail(id) {
     h("section", { class: "detail" },
       h("p", { class: "detail__cat" }, e.category),
       h("h1", { class: "detail__name" }, name),
-      h("p", { class: "detail__cap" }, `${who} ${e.stores}곳 평균, ${perUnit(e)}`),
+      h("p", { class: "detail__cap" }, national ? `전국 평균, ${perUnit(e)}` : `${who} ${e.stores}곳 평균, ${perUnit(e)}`),
       wonNode(e.unit_price, "detail__price"),
       h("p", { class: "detail__sig" },
         h("span", { class: normal.cls ? `pill pill--${normal.cls}` : "pill" }, normal.text), h("span", {}, `${md(e.as_of)} 값`)),
-      rangeBlock("가게마다", priceRuler({ min, max, band: [lo, hi], avg, labels }), caption),
+      national ? null : rangeBlock("가게마다", priceRuler({ min, max, band: [lo, hi], avg, labels }), caption),
       h("h2", { class: "sec" }, "30일"),
       e.trend.length >= 2 ? trendChart(e) : h("p", { class: "empty" }, "추이 값이 하루치뿐이에요"),
       h("h2", { class: "sec" }, "지난 값과 비교"),
@@ -599,7 +602,9 @@ function renderDetail(id) {
           return info(label, h("span", { class: c.cls || null }, c.text));
         }),
         info(`${e.unit} 값`, h("span", { class: "num" }, won(e.price)))),
-      h("p", { class: "detail__foot" }, "평년과 지난 값은 KAMIS 전체 평균으로 견줘요.")));
+      h("p", { class: "detail__foot" }, national
+        ? "축산물은 가게마다 값이 없어 KAMIS 전국 평균으로 보여요."
+        : "평년과 지난 값은 KAMIS 전체 평균으로 견줘요.")));
 }
 
 // ←: 앱 안에서 들어왔으면 브라우저 뒤로 가기(검색어와 보던 자리가 그대로 남는다).
