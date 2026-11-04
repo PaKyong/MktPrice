@@ -125,6 +125,47 @@ def test_first_real_run_does_not_keep_sample_values(tmp_path: Path) -> None:
     assert ITEMS[1].id not in {e["id"] for e in data["items"]}
 
 
+class HolidaySource(FailingSource):
+    """샘플을 읽되, 한 달 전 같은 날(10-02)이 공휴일이었던 것처럼 흉내 낸다.
+
+    기준일 응답은 모든 줄의 1개월 전 칸이 비고, 10-02는 "데이터 없음", 그 전날 10-01에는 당일 값이
+    1,000원으로 온다.
+    """
+
+    def __init__(self, inner: SampleSource) -> None:
+        super().__init__(inner)
+        self.days: List[date] = []
+
+    def category(self, category_code: str, day: date) -> Dict[str, Any]:
+        self.days.append(day)
+        raw = json.loads(json.dumps(self.inner.category(category_code, day)))
+        if day == date(2026, 10, 2) or day < date(2026, 10, 1):
+            return {"data": ["001"]}
+        for row in raw["data"]["item"] if isinstance(raw["data"], dict) else []:
+            if day == date(2026, 10, 1):
+                row["day1"], row["dpr1"] = "당일 (10/01)", "1,000"
+            else:
+                row["dpr5"] = "-"
+        return raw
+
+
+def test_run_fills_month_ago_from_nearest_survey_day(tmp_path: Path) -> None:
+    out = tmp_path / "prices.json"
+    src = HolidaySource(sample_source(tmp_path, date(2026, 11, 2)))
+    assert run(src, ITEMS, out, date(2026, 11, 2)) == "updated"
+    today = {(r["itemcode"], r["kindcode"]): int(r["dpr1"].replace(",", ""))
+             for code in ("100", "200", "300", "400", "600")
+             for r in src.inner.category(code, date(2026, 11, 2))["data"]["item"] if r["rank"] == "상품"}
+    for e in read(out)["items"]:
+        item = next(i for i in ITEMS if i.id == e["id"])
+        expected = round((today[(item.item_code, item.kind_code)] - 1000) / 1000 * 100, 1)
+        assert e["change"]["month"] == expected
+    # 부류마다 10-02(공휴일)와 10-01만 더 부르고, 1년 전은 값이 있어 부르지 않는다.
+    past = [d for d in src.days if d < date(2026, 11, 1)]
+    assert sorted(set(past)) == [date(2026, 10, 1), date(2026, 10, 2)]
+    assert len(past) == 2 * 5
+
+
 class RenamedSource(FailingSource):
     """가게 이름이나 전체 평균 줄을 바꿔, 해석 가정이 틀린 실제 응답을 흉내 낸다."""
 

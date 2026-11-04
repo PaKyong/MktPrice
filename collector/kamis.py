@@ -6,6 +6,7 @@
 오류 메시지에 넣지 않는다.
 """
 
+import calendar
 import json
 import time
 import urllib.parse
@@ -242,6 +243,48 @@ def latest_overall(source: Source, today: date,
         if any(useful(row) and row.today is not None for row in rows):
             return rows, failed, tried
     return [], failed, tried
+
+
+def months_back(day: date, months: int) -> date:
+    """day에서 months달 전의 같은 날짜를 낸다.
+
+    그 달에 같은 날이 없으면(3월 31일의 1개월 전, 2월 29일의 1년 전) 그 달 마지막 날로 한다.
+
+    Args:
+        day: 기준 날짜.
+        months: 거슬러 갈 달 수(1개월 전은 1, 1년 전은 12).
+
+    Returns:
+        months달 전의 날짜.
+    """
+    year, month = divmod(day.year * 12 + day.month - 1 - months, 12)
+    return date(year, month + 1, min(day.day, calendar.monthrange(year, month + 1)[1]))
+
+
+def past_overall(source: Source, category_code: str, day: date, today: date) -> List[OverallRow]:
+    """부류 하나의 전체 평균을 day 또는 그 전 가장 가까운 조사일 것으로 받는다.
+
+    KAMIS의 1개월 전·1년 전 값은 정확히 그 날짜의 값이라, 그날이 주말·공휴일이면 비어서 온다
+    (2026-11-04 결정). day부터 하루씩 거꾸로 최대 `LOOKBACK_DAYS`일 동안 부르고, 당일 값이 있는
+    줄이 하나라도 있는 날에서 멈춘다. 지난 값을 채우는 일이라 받기에 실패하면 조용히 그만둔다.
+
+    Args:
+        source: KAMIS 또는 샘플 받기 쪽.
+        category_code: KAMIS 부류 코드.
+        day: 찾기 시작할 날짜(예: 기준일의 한 달 전).
+        today: 날짜 글자의 연도를 정할 기준 날짜.
+
+    Returns:
+        그날의 모든 등급 줄. 찾지 못했거나 실패하면 빈 목록.
+    """
+    for back in range(LOOKBACK_DAYS):
+        try:
+            rows = parse_category(source.category(category_code, day - timedelta(days=back)), category_code, today)
+        except KamisError:
+            return []
+        if any(row.today is not None for row in rows):
+            return rows
+    return []
 
 
 def make_source(env: Mapping[str, str], sample_dir: Path) -> Source:

@@ -9,7 +9,7 @@ from typing import Any, Dict, Iterator, List, Optional, Union
 import pytest
 
 from collector.kamis import (LOOKBACK_DAYS, KamisSource, SampleSource, describe_response, latest_overall,
-                             make_source)
+                             make_source, months_back, past_overall)
 from collector.models import Item, OverallRow
 from collector.parse import KamisError
 
@@ -187,3 +187,26 @@ def test_latest_overall_ignores_values_only_in_rows_it_does_not_use() -> None:
     assert {r.today for r in rows if r.rank == "상품"} == {3000}
     assert min(src.days) == date(2026, 11, 2)
     assert len(tried) == 2
+
+
+def test_months_back_keeps_day_or_takes_month_end() -> None:
+    assert months_back(date(2026, 11, 3), 1) == date(2026, 10, 3)
+    assert months_back(date(2026, 1, 15), 1) == date(2025, 12, 15)
+    assert months_back(date(2026, 3, 31), 1) == date(2026, 2, 28)
+    assert months_back(date(2028, 2, 29), 12) == date(2027, 2, 28)
+    assert months_back(date(2026, 11, 2), 12) == date(2025, 11, 2)
+
+
+def test_past_overall_steps_back_to_nearest_survey_day() -> None:
+    src = DaySource(last_day=date(2026, 10, 2))
+    rows = past_overall(src, "200", date(2026, 10, 4), date(2026, 11, 4))
+    assert [r.today for r in rows] == [3000]
+    assert src.days == [date(2026, 10, 4), date(2026, 10, 3), date(2026, 10, 2)]
+
+
+def test_past_overall_gives_up_quietly() -> None:
+    assert past_overall(DaySource(last_day=date(2026, 10, 2), fail=True), "200", date(2026, 10, 4),
+                        date(2026, 11, 4)) == []
+    src = DaySource(last_day=None)
+    assert past_overall(src, "200", date(2026, 10, 4), date(2026, 11, 4)) == []
+    assert len(src.days) == LOOKBACK_DAYS

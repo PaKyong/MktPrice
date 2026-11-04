@@ -9,6 +9,7 @@
 
 import os
 import sys
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -16,7 +17,8 @@ from zoneinfo import ZoneInfo
 
 from collector.compute import LARGE_ONLY, THRESHOLD_PCT, WINDOW_DAYS, build_entry
 from collector.items import ITEMS_PATH, load_items
-from collector.kamis import LOOKBACK_DAYS, SAMPLE_DIR, Source, latest_overall, make_source
+from collector.kamis import (LOOKBACK_DAYS, SAMPLE_DIR, Source, latest_overall, make_source, months_back,
+                             past_overall)
 from collector.models import CATEGORIES, Item, OverallRow
 from collector.output import (
     PRICES_PATH,
@@ -48,6 +50,37 @@ def _collect_overall(source: Source, items: List[Item], today: date
     return overall, failed, tried
 
 
+def _fill_past(source: Source, overall: Dict[Tuple[str, str, str], OverallRow], as_of: date,
+               today: date) -> Dict[Tuple[str, str, str], OverallRow]:
+    """비어서 온 1개월 전·1년 전 값을 가까운 조사일의 당일 값으로 채운다(2026-11-04 결정).
+
+    부류 안에서 당일 값이 있는 줄의 칸이 모두 비었을 때만 그 부류를 다시 부른다. 그날이
+    주말·공휴일이라 KAMIS가 칸을 통째로 비운 경우다. 몇 줄만 비었으면 그날 조사는 있었고 그
+    품종만 값이 없던 것이라, 다시 불러도 같은 값이 온다.
+
+    Args:
+        source: KAMIS 또는 샘플 받기 쪽.
+        overall: 품종별 전체 평균 줄.
+        as_of: 기준일.
+        today: 날짜 글자의 연도를 정할 기준 날짜.
+
+    Returns:
+        채운 줄로 바꾼 새 사전.
+    """
+    filled = dict(overall)
+    for field, months in (("month_ago", 1), ("year_ago", 12)):
+        for code in CATEGORIES:
+            rows = [row for row in filled.values() if row.category_code == code and row.today is not None]
+            if not rows or any(getattr(row, field) is not None for row in rows):
+                continue
+            past = {_row_key(row): row.today
+                    for row in past_overall(source, code, months_back(as_of, months), today)}
+            for row in rows:
+                if past.get(_row_key(row)) is not None:
+                    filled[_row_key(row)] = replace(row, **{field: past[_row_key(row)]})
+    return filled
+
+
 def _row_key(x: Any) -> Tuple[str, str, str]:
     """품종이나 전체 평균 줄을 (품목 코드, 품종 코드, 등급 번호)로 나타낸다."""
     return (x.item_code, x.kind_code, x.rank_code)
@@ -65,7 +98,8 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
     2. 부류 6개의 전체 평균을 받는다. 오늘 값이 없으면 하루씩 거꾸로 최대 7일까지
        찾는다. 실패한 부류의 품종은 실패로 다룬다.
     3. 전체 평균의 당일 날짜(값이 있는 줄) 가운데 가장 늦은 날을 기준일로 삼고, 기존 파일과
-       기준일·출처가 같으면 건너뛴다.
+       기준일·출처가 같으면 건너뛴다. 1개월 전·1년 전 값이 통째로 빈 부류는 가까운 조사일
+       값으로 채운다.
     4. 품종마다 기준일부터 거꾸로 31일의 가게 값을 받아 항목을 만든다. 전체
        평균의 조사 단위가 품종 목록 파일과 다르면 그 품종은 실패로 다룬다.
     5. 한 줄 요약을 찍고, 결과가 수상하면(새 항목이 없음, 전체 평균과 맞은
@@ -108,6 +142,7 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
     as_of = max(row.as_of for row in priced)
     if not force and should_skip(existing, as_of, source.name):
         return "skipped"
+    overall = _fill_past(source, overall, as_of, today)
 
     start = as_of - timedelta(days=WINDOW_DAYS - 1)
     entries: List[Dict[str, Any]] = []
