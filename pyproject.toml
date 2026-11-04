@@ -10,5 +10,7 @@ testpaths = ["collector/tests", "tools/tests"]
 
 [dependency-groups]
 dev = [
+    "brotli>=1.2.1",
+    "fonttools>=4.68.0",
     "pytest>=9.2.0",
 ]

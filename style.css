@@ -1,5 +1,13 @@
 /* 장보기 가격 — 증권 앱의 관심 종목 목록 같은 생김새(설계 8절 "생김새") */
 
+/* 가격 숫자 글꼴: Geist에서 숫자·쉼표·%만 잘라 만든 것(tools/make_font.py). 한글과 "원"은 폰 기본 글꼴 */
+@font-face {
+  font-family: "Geist Num";
+  src: url("fonts/geist-num.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+
 :root {
   --bg: #ffffff;
   --text: #191f28;
@@ -57,6 +65,9 @@ body {
 
 button, input { font: inherit; color: inherit; }
 
+/* 가격 숫자: Geist 반굵게, 자리 폭을 같게. "원"은 <small>로 붙인다 */
+.num { font-family: "Geist Num", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR",
+  "Malgun Gothic", sans-serif; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
 .muted { color: var(--muted); }
 .down { color: var(--down); }
 .up { color: var(--up); }
