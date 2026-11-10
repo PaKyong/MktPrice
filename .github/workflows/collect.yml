@@ -129,7 +129,7 @@ jobs:
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -147,7 +147,21 @@ jobs:
           path: _site
           name: github-pages-${{ github.run_attempt }}
 
+      # 실패해도 작업을 끝내지 않고 아래에서 한 번 더 한다. 방금 올린 묶음을 GitHub이 찾지 못해 실패한
+      # 날(2026-11-10)이 있었고, 그대로 끝나면 사이트가 다음 실행까지 옛 값에 멈춘다.
       - id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
+
+      - name: 배포가 실패했으면 30초 기다리기
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 30
+
+      # 두 번째도 실패하면 작업이 실패로 끝나 GitHub이 메일로 알린다.
+      - id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v4
         with:
           artifact_name: github-pages-${{ github.run_attempt }}

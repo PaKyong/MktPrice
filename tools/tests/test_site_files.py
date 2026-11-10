@@ -51,3 +51,25 @@ def test_failed_emart_commit_cannot_block_kamis_deploy():
     output = re.search(rf"^      (\S+): \$\{{\{{ steps\.{step_id}\.outcome \}}\}}", workflow, re.M).group(1)
     check = re.search(r"^  emart-check:\n((?:    .*\n)*)", workflow, re.M).group(1)
     assert f"needs.collect.outputs.{output} == 'failure'" in check
+
+
+def test_failed_deploy_is_tried_once_more():
+    """배포 단계가 실패하면 같은 실행 안에서 한 번 더 배포한다.
+
+    2026-11-10 새벽 실행은 방금 올린 사이트 묶음을 GitHub이 찾지 못해 배포가 실패했고, 다시 시도하지
+    않아 사이트가 다음 실행까지 옛 값에 멈춰 있었다. 첫 시도가 작업을 실패로 끝내면 다시 시도할 수
+    없으므로 continue-on-error로 두고, 두 번째 시도는 첫 시도가 실패했을 때만 돈다. 두 번째도
+    실패하면 작업이 실패로 끝나야 메일이 온다.
+    """
+    workflow = (ROOT / ".github" / "workflows" / "collect.yml").read_text(encoding="utf-8")
+    job = re.search(r"^  deploy:\n((?:    .*\n|\n)*)", workflow, re.M).group(1)
+    tries = [step for step in re.split(r"^      - ", job, flags=re.M) if "uses: actions/deploy-pages@" in step]
+    assert len(tries) == 2
+    first, second = tries
+    assert "continue-on-error: true" in first
+    first_id = re.search(r"id: (\S+)", first).group(1)
+    assert f"if: steps.{first_id}.outcome == 'failure'" in second
+    assert "continue-on-error" not in second
+    # 두 시도가 같은 사이트 묶음을 배포한다.
+    names = [re.search(r"artifact_name: (.+)", step).group(1) for step in tries]
+    assert names[0] == names[1]
