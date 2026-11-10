@@ -423,8 +423,9 @@ function renderSearch() {
   view.replaceChildren();
   const q = state.query;
   const match = matcher(q);
-  // KAMIS 품종 뒤에 이마트 상품(전체 품목과 같은 순서).
-  const found = [...browseOrder().filter((e) => match(e.item) || match(e.kind)),
+  // KAMIS 품종 뒤에 이마트 상품(전체 품목과 같은 순서). 품종은 품목 이름과 품종 이름을 이어 붙여 찾는다.
+  // 화면에 보이는 대로 "한우 등심", "사과 후지"라고 쳐도 나오게 하려는 것이다.
+  const found = [...browseOrder().filter((e) => match(e.item + e.kind)),
                  ...state.emartItems.filter((e) => match(e.name))];
   if (!found.length) {
     view.append(h("p", { class: "found" }, `"${q}"에 맞는 품목이 없어요. 다른 이름으로 찾아 보세요.`));
