@@ -34,7 +34,9 @@ function decodeId(raw) {
   }
 }
 // 품종 이름에 품목 이름이 들어 있으면 품종 이름만 쓴다("양파 · 양파" → "양파", "파 · 대파" → "대파").
-const displayName = (e) => (e.kind.includes(e.item) ? e.kind : `${e.item} ${e.kind}`);
+// 괄호 안은 빼고 본다. "20kg(햅쌀)"은 괄호 안에만 "쌀"이 있어 "쌀 20kg(햅쌀)"로 쓴다.
+const noParens = (s) => s.replace(/\(.*?\)/g, "");
+const displayName = (e) => (noParens(e.kind).includes(noParens(e.item)) ? e.kind : `${e.item} ${e.kind}`);
 // 무게는 "100g당", 부피(우유)는 "100ml당", 개수는 "1개당"·"1포기당".
 const perUnit = (e) => (e.measure === "count" ? `1${e.unit_label}당` : `${e.unit_label}당`);
 
