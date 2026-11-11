@@ -9,7 +9,7 @@ import pytest
 
 from collector.__main__ import run
 from collector.items import ITEMS_PATH, load_items
-from collector.kamis import SampleSource
+from collector.kamis import KamisDown, KamisSource, SampleSource
 from collector.make_sample import write_sample
 from collector.models import Item
 from collector.output import CollectError, SampleGuardError
@@ -104,6 +104,37 @@ def test_run_total_failure_keeps_file(tmp_path: Path) -> None:
         run(FailingSource(sample_source(tmp_path, date(2026, 11, 3)), fail_items={i.id for i in ITEMS}),
             ITEMS, out, date(2026, 11, 3))
     assert out.read_bytes() == before
+
+
+def test_run_stops_early_and_keeps_file_when_kamis_does_not_answer(tmp_path: Path) -> None:
+    out = tmp_path / "prices.json"
+    out.write_text('{"as_of": "2026-11-01", "source": "KAMIS", "items": []}', encoding="utf-8")
+    before = out.read_bytes()
+    tries: List[str] = []
+
+    def dead(url: str, timeout: float) -> Any:
+        tries.append(url)
+        raise OSError("연결 안 됨")
+
+    src = KamisSource("k", "me", opener=dead, sleep=lambda seconds: None)
+    with pytest.raises(KamisDown):
+        run(src, ITEMS, out, date(2026, 11, 3))
+    # 부류 6개를 다 불러 보지 않고, 요청 3번(4번씩 시도)에서 멈춘다.
+    assert len(tries) == 12
+    assert out.read_bytes() == before
+
+
+def test_main_returns_1_when_kamis_does_not_answer(monkeypatch: pytest.MonkeyPatch,
+                                                   capsys: pytest.CaptureFixture[str]) -> None:
+    import collector.__main__ as entry
+
+    def down(*args: Any, **kwargs: Any) -> str:
+        raise KamisDown("KAMIS가 요청 3번에 연달아 응답하지 않아 수집을 멈춥니다.")
+
+    monkeypatch.setattr(entry, "run", down)
+    monkeypatch.delenv("KAMIS_CERT_KEY", raising=False)
+    assert entry.main([]) == 1
+    assert "수집 실패: KAMIS가 요청 3번에" in capsys.readouterr().err
 
 
 def test_run_sample_does_not_overwrite_real_data(tmp_path: Path) -> None:

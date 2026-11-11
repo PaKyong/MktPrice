@@ -26,6 +26,17 @@ NO_DATA_RESPONSE: Dict[str, Any] = {"data": ["001"]}
 SAMPLE_DIR = Path(__file__).parent / "sample"
 # 오늘 값이 없으면(아직 안 올라왔거나 공휴일) 하루씩 거꾸로 이만큼까지 찾는다.
 LOOKBACK_DAYS = 7
+# 요청 하나가 다시 시도까지 모두 실패하는 일이 연달아 이만큼 일어나면 KAMIS가 응답하지 않는 것으로
+# 보고 멈춘다(2026-11-11 결정). 요청 하나가 끝내 실패하는 데 2분 14초까지 걸려서, 계속하면 품종마다
+# 그만큼씩 기다리다 작업 시간 제한에 걸린다.
+MAX_FAILS_IN_A_ROW = 3
+
+
+class KamisDown(Exception):
+    """KAMIS가 연달아 응답하지 않아 수집을 멈춘다.
+
+    받기 실패 하나를 넘기고 계속하는 곳들(`except KamisError`)이 삼키지 않도록 `KamisError`와 따로 둔다.
+    """
 
 
 class Source(Protocol):
@@ -54,6 +65,7 @@ class KamisSource:
         self._cert_id = cert_id
         self._opener = opener
         self._sleep = sleep
+        self._fails_in_a_row = 0
 
     def _get(self, params: Dict[str, str], what: str) -> Dict[str, Any]:
         """요청을 보내고 JSON 응답을 돌려준다.
@@ -72,6 +84,8 @@ class KamisSource:
         Raises:
             KamisError: 네 번 모두 실패한 경우. 원래 예외는 주소를 담고 있을 수
                 있어 붙이지 않는다.
+            KamisDown: 그렇게 실패한 요청이 `MAX_FAILS_IN_A_ROW`번 연달아 나온 경우.
+                사이에 응답을 한 번이라도 읽었으면 처음부터 다시 센다.
         """
         query = {"p_cert_key": self._cert_key, "p_cert_id": self._cert_id,
                  "p_returntype": "json", **params}
@@ -80,12 +94,18 @@ class KamisSource:
         for attempt in range(len(RETRY_WAITS) + 1):
             try:
                 with self._opener(url, timeout=TIMEOUT_SECONDS) as response:
-                    return json.loads(response.read().decode("utf-8"))
+                    data = json.loads(response.read().decode("utf-8"))
+                self._fails_in_a_row = 0
+                return data
             except (OSError, ValueError) as err:
                 # 원래 예외의 글은 주소(키)를 담을 수 있어 종류 이름만 남긴다.
                 reason = type(err).__name__
                 if attempt < len(RETRY_WAITS):
                     self._sleep(RETRY_WAITS[attempt])
+        self._fails_in_a_row += 1
+        if self._fails_in_a_row >= MAX_FAILS_IN_A_ROW:
+            raise KamisDown(f"KAMIS가 요청 {MAX_FAILS_IN_A_ROW}번에 연달아 응답하지 않아 수집을 멈춥니다"
+                            f"(마지막 요청: {what}, {reason}). 기존 파일은 그대로 둡니다.") from None
         raise KamisError(f"KAMIS 요청 실패({reason}): {what}") from None
 
     def category(self, category_code: str, day: date) -> Dict[str, Any]:

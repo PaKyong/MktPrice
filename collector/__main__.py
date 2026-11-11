@@ -18,8 +18,8 @@ from zoneinfo import ZoneInfo
 
 from collector.compute import LARGE_ONLY, THRESHOLD_PCT, WINDOW_DAYS, build_entry, build_national_entry
 from collector.items import ITEMS_PATH, RANK_PREFERENCE, load_items
-from collector.kamis import (LOOKBACK_DAYS, SAMPLE_DIR, Source, latest_overall, make_source, months_back,
-                             past_overall)
+from collector.kamis import (LOOKBACK_DAYS, SAMPLE_DIR, KamisDown, Source, latest_overall, make_source,
+                             months_back, past_overall)
 from collector.models import CATEGORIES, LIVESTOCK, Item, OverallRow
 from collector.output import (
     PRICES_PATH,
@@ -217,6 +217,7 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
         CollectError: 전체 평균을 하나도 못 받았거나(부류마다 이유를 붙인다), 7일
             동안 값이 없거나, 모든 품종을 못 받았거나,
             새 항목이 하나도 없거나, 전체 평균과 맞은 품종이 없는 경우.
+        KamisDown: KAMIS가 요청 3번에 연달아 응답하지 않은 경우. 기존 파일은 그대로다.
     """
     existing = load_prices(out_path)
     check_sample_guard(existing, source.name)
@@ -329,7 +330,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         args = sys.argv[1:] if argv is None else argv
         result = run(source, load_items(ITEMS_PATH), PRICES_PATH, today, force="--force" in args)
-    except (CollectError, SampleGuardError) as err:
+    except (CollectError, SampleGuardError, KamisDown) as err:
         print(f"수집 실패: {err}", file=sys.stderr)
         return 1
     if result == "skipped":

@@ -8,8 +8,8 @@ from typing import Any, Dict, Iterator, List, Optional, Union
 
 import pytest
 
-from collector.kamis import (LOOKBACK_DAYS, KamisSource, SampleSource, describe_response, latest_overall,
-                             make_source, months_back, past_overall)
+from collector.kamis import (LOOKBACK_DAYS, KamisDown, KamisSource, SampleSource, describe_response,
+                             latest_overall, make_source, months_back, past_overall)
 from collector.models import Item, OverallRow
 from collector.parse import KamisError
 
@@ -62,6 +62,32 @@ def test_kamis_gives_up_after_four_tries_without_leaking_key() -> None:
     assert "SECRETKEY" not in str(err.value)
     assert "OSError" in str(err.value)
     assert err.value.__cause__ is None and err.value.__suppress_context__
+
+
+def test_kamis_stops_when_three_requests_in_a_row_get_no_answer() -> None:
+    opener = FakeOpener([OSError("https://x?p_cert_key=SECRETKEY")] * 12)
+    src = KamisSource("SECRETKEY", "me", opener=opener, sleep=no_sleep)
+    for code in ("100", "200"):
+        with pytest.raises(KamisError):
+            src.category(code, DAY)
+    with pytest.raises(KamisDown) as err:
+        src.category("300", DAY)
+    assert len(opener.urls) == 12
+    assert "SECRETKEY" not in str(err.value)
+    # 받기 실패 하나를 넘기고 계속하는 곳들(except KamisError)이 삼키면 안 된다.
+    assert not isinstance(err.value, KamisError)
+
+
+def test_kamis_counts_failures_from_zero_again_after_an_answer() -> None:
+    opener = FakeOpener([OSError()] * 8 + [b'{"data": ["001"]}'] + [OSError()] * 8)
+    src = KamisSource("k", "me", opener=opener, sleep=no_sleep)
+    for code in ("100", "200"):
+        with pytest.raises(KamisError):
+            src.category(code, DAY)
+    assert src.category("300", DAY) == {"data": ["001"]}
+    for code in ("400", "500"):
+        with pytest.raises(KamisError):
+            src.category(code, DAY)
 
 
 def test_kamis_does_not_retry_no_data() -> None:
