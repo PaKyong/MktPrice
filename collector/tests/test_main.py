@@ -291,6 +291,43 @@ def test_run_fails_when_no_item_matches_overall(tmp_path: Path) -> None:
     assert not out.exists()
 
 
+def with_livestock(tmp_path: Path, out: Path) -> Tuple[List[Item], SampleSource]:
+    """농수산물 다섯과 축산물 한 줄로 11-02 파일을 만들어 두고, 품종 목록과 11-03 샘플 받기 쪽을 돌려준다."""
+    items = ITEMS + [LIVESTOCK_ITEM]
+    write_sample(tmp_path / "day1", items, date(2026, 11, 2))
+    assert run(SampleSource(tmp_path / "day1"), items, out, date(2026, 11, 2)) == "updated"
+    write_sample(tmp_path / "day2", items, date(2026, 11, 3))
+    return items, SampleSource(tmp_path / "day2")
+
+
+def test_run_fails_when_only_livestock_entries_are_made(tmp_path: Path) -> None:
+    # 가게 이름 규칙이 바뀌면 농수산물 항목은 하나도 안 만들어지는데, 축산물은 가게 값 없이도 만들어진다.
+    out = tmp_path / "prices.json"
+    items, day2 = with_livestock(tmp_path, out)
+    before = out.read_bytes()
+    with pytest.raises(CollectError, match="대형유통"):
+        run(RenamedSource(day2, market_prefix="가게 "), items, out, date(2026, 11, 3))
+    assert out.read_bytes() == before
+
+
+def test_run_fails_when_every_farm_item_fails_though_livestock_is_fine(tmp_path: Path) -> None:
+    out = tmp_path / "prices.json"
+    items, day2 = with_livestock(tmp_path, out)
+    before = out.read_bytes()
+    with pytest.raises(CollectError, match="받지 못했습니다"):
+        run(FailingSource(day2, fail_items={i.id for i in ITEMS}), items, out, date(2026, 11, 3))
+    assert out.read_bytes() == before
+
+
+def test_run_prints_item_counts_of_old_and_new_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    out = tmp_path / "prices.json"
+    run(sample_source(tmp_path, date(2026, 11, 2)), ITEMS, out, date(2026, 11, 2))
+    assert f"앞 파일 0개 → 새 파일 {len(ITEMS)}개(옛 값으로 남긴 품종 0개)" in capsys.readouterr().out
+    src = FailingSource(sample_source(tmp_path, date(2026, 11, 3)), fail_items={ITEMS[1].id})
+    run(src, ITEMS, out, date(2026, 11, 3))
+    assert f"앞 파일 {len(ITEMS)}개 → 새 파일 {len(ITEMS)}개(옛 값으로 남긴 품종 1개)" in capsys.readouterr().out
+
+
 def test_run_treats_unit_mismatch_as_failure_and_reports_it(tmp_path: Path,
                                                             capsys: pytest.CaptureFixture[str]) -> None:
     out = tmp_path / "prices.json"

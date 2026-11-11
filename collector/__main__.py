@@ -198,8 +198,9 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
        목록 파일과 다르면 그 품종은 실패로 다룬다.
     5. 한 줄 요약(축산물은 따로 한 줄, 빠진 축산물은 이름까지)과 품종 목록에 없는 품종의 이름을
        찍고, 결과가 수상하면(새 항목이 없음, 전체 평균과 맞은 품종이 없음) 기존 파일을 지키려고 멈춘다.
-    6. 실패한 품종은 기존 항목을 남기되(기존 파일 출처가 같을 때만), 새 파일을
-       통째로 바꿔 넣는다.
+       새 항목과 받지 못한 품종은 농수산물만 센다(축산물은 가게 값 없이도 만들어져서).
+    6. 실패한 품종은 기존 항목을 남기되(기존 파일 출처가 같을 때만), 앞 파일과 새 파일의 품종 수를
+       찍고 새 파일을 통째로 바꿔 넣는다.
 
     Args:
         source: KAMIS 또는 샘플 받기 쪽.
@@ -293,9 +294,12 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
         # 기록만 남기고 목록에 넣지는 않는다. 이름과 조사 단위를 사람이 본 뒤 넣는다.
         print(f"품종 목록에 없는 품종 {len(unlisted)}개: {', '.join(unlisted)}. "
               "화면에 넣으려면 Actions의 \"품종 목록도 다시 만들기\"로 돌리세요.")
-    if items and len(failed_ids) == len(items):
-        raise CollectError("모든 품종을 받지 못했습니다.")
-    if items and not entries:
+    # 축산물 항목은 가게 값 없이도 만들어지므로, 농수산물이 있으면 농수산물만 보고 판단한다.
+    # 함께 세면 가게 값 받기만 고장 난 날 축산물만 남은 파일이 성공으로 쓰인다(2026-11-11 결정).
+    watched = {item.id for item in items if item.category_code != LIVESTOCK} or {item.id for item in items}
+    if watched and watched <= failed_ids:
+        raise CollectError("모든 품종을 받지 못했습니다(축산물은 빼고 셈). 기존 파일은 그대로 둡니다.")
+    if watched and not any(entry["id"] in watched for entry in entries):
         raise CollectError(f"새로 만든 품종 항목이 하나도 없습니다({'대형유통' if LARGE_ONLY else '가게'} 값이 "
                            "없음). 가게 이름 규칙이나 응답 모양을 확인하세요. 기존 파일은 그대로 둡니다.")
     if entries and not matched:
@@ -304,6 +308,10 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
 
     # 출처가 바뀐 첫 실행(샘플 → KAMIS)에서는 실패한 품종의 샘플 값을 남기지 않는다.
     keep = existing if existing is not None and existing.get("source") == source.name else None
+    merged = carry_over(entries, failed_ids, keep)
+    # 품종이 갑자기 줄거나 옛 값이 많이 남은 날을 실행 기록 한 줄로 알아보게 한다.
+    print(f"앞 파일 {len((existing or {}).get('items', []))}개 → 새 파일 {len(merged)}개"
+          f"(옛 값으로 남긴 품종 {len(merged) - len(entries)}개)")
     write_prices(out_path, {
         "as_of": as_of.isoformat(),
         "source": source.name,
@@ -311,7 +319,7 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
         "basis": {"compare": "전국 대형유통 평균" if LARGE_ONLY else "전국 평균",
                   "season": "KAMIS 전체 평균"},
         "threshold_pct": THRESHOLD_PCT,
-        "items": carry_over(entries, failed_ids, keep),
+        "items": merged,
     })
     return "updated"
 
