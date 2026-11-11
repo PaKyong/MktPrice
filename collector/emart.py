@@ -32,6 +32,8 @@ OTHER_GROUP = "기타"
 SOURCE_NAME = "참가격"
 # 가장 새 달과 그 앞 두 달(조사 6번쯤).
 MONTHS = 3
+# 오르기 전의 옛 값이어도 평소 값보다 이 %보다 더 싸면 값을 올린 것이 아니라 행사였다고 본다.
+BIG_SALE_PCT = 20
 KST = ZoneInfo("Asia/Seoul")
 _DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -124,7 +126,8 @@ def usual_and_low(history: List[List[Any]]) -> Tuple[int, Optional[Dict[str, Any
     평소 값과 같으면 행사가 없었던 것으로 보고, 같은 최저 값이 여러 날이면 가장 최근 날을 쓴다.
     가장 옛 조사부터 이어진 낮은 값 가운데 그 뒤로 더 낮아진 적이 없는 값은 값이 오르기 전의
     값이라 최저 값을 고를 때 보지 않는다(2026-11-11 결정. 1,180원이다가 1,260원으로 오른 뒤
-    그대로면 행사 없음).
+    그대로면 행사 없음). 다만 평소 값보다 20% 넘게 싼 옛 값은 긴 행사였다고 보고 남긴다(같은 날
+    결정. 6,400원이다가 12,900원이 되면 행사 때 6,400원).
 
     Args:
         history: 조사일별 [날, 대표값, 지점 수]. 최근 날부터.
@@ -134,8 +137,9 @@ def usual_and_low(history: List[List[Any]]) -> Tuple[int, Optional[Dict[str, Any
     """
     prices = [price for _, price, _ in history]
     usual = max(prices)
-    # 가장 옛 조사(맨 끝)부터, 그 뒤로 더 낮아진 적이 없는 낮은 값을 차례로 뺀다.
-    while prices[-1] < usual and prices[-1] <= min(prices[:-1]):
+    # 가장 옛 조사(맨 끝)부터, 그 뒤로 더 낮아진 적이 없는 낮은 값을 차례로 뺀다. 큰 행사 값에서 멈춘다.
+    while (prices[-1] < usual and prices[-1] <= min(prices[:-1])
+           and (usual - prices[-1]) * 100 <= usual * BIG_SALE_PCT):
         prices.pop()
     low_price = min(prices)
     if low_price == usual:

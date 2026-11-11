@@ -109,6 +109,24 @@ def test_products_dip_before_price_rise_is_still_a_sale() -> None:
     assert build_products(rows)[0]["low"] == {"price": 3202, "day": "2026-08-28", "pct": -71}
 
 
+def test_products_big_drop_before_price_rise_is_kept_as_sale() -> None:
+    # 오르기 전 값이어도 평소 값보다 20% 넘게 싸면 값을 올린 것이 아니라 긴 행사였다고 본다(2026-11-11 결정).
+    name = "메디안 치석 치약(120g*3개)"
+    rows = (shop(name, "2026-08-07", 6400, 2) + shop(name, "2026-08-28", 6400, 2)
+            + shop(name, "2026-09-11", 12900, 2) + shop(name, "2026-09-25", 12900, 2))
+    assert build_products(rows)[0]["low"] == {"price": 6400, "day": "2026-08-28", "pct": -50}
+
+
+def test_products_exactly_20_percent_before_price_rise_is_not_a_sale() -> None:
+    # 딱 20% 싼 옛 값(8,000 → 10,000)은 "넘게"가 아니라 오르기 전 값으로 본다.
+    rows = (shop("고향만두(900g)", "2026-08-28", 8000, 1) + shop("고향만두(900g)", "2026-09-11", 10000, 1)
+            + shop("고향만두(900g)", "2026-09-25", 10000, 1))
+    assert build_products(rows)[0]["low"] is None
+    rows = (shop("고향만두(900g)", "2026-08-28", 7990, 1) + shop("고향만두(900g)", "2026-09-11", 10000, 1)
+            + shop("고향만두(900g)", "2026-09-25", 10000, 1))
+    assert build_products(rows)[0]["low"] == {"price": 7990, "day": "2026-08-28", "pct": -20}
+
+
 def test_products_price_drop_still_counts_as_sale() -> None:
     # 내리기만 한 상품은 값을 내린 것인지 행사 중인지 가릴 수 없어 행사로 둔다.
     rows = shop("신라면(5개입)", "2026-08-28", 4150, 1) + shop("신라면(5개입)", "2026-09-25", 3950, 1)
