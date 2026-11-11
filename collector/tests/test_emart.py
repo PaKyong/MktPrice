@@ -74,9 +74,45 @@ def test_products_no_sale_when_all_same() -> None:
 
 
 def test_products_low_tie_takes_latest_day() -> None:
-    rows = (shop("신라면(5개입)", "2026-07-24", 3950, 1) + shop("신라면(5개입)", "2026-08-28", 4150, 1)
-            + shop("신라면(5개입)", "2026-09-11", 3950, 1))
+    rows = (shop("신라면(5개입)", "2026-07-10", 4150, 1) + shop("신라면(5개입)", "2026-07-24", 3950, 1)
+            + shop("신라면(5개입)", "2026-08-28", 4150, 1) + shop("신라면(5개입)", "2026-09-11", 3950, 1))
     assert build_products(rows)[0]["low"]["day"] == "2026-09-11"
+
+
+def test_products_price_rise_is_not_a_sale() -> None:
+    # 가장 옛 조사에서 1,180원이다가 오른 뒤 그대로인 상품은 값이 오른 것이지 행사가 아니다(2026-11-11 결정).
+    name = "새우깡(90g)"
+    rows = (shop(name, "2026-08-07", 1180, 2) + shop(name, "2026-08-28", 1260, 2)
+            + shop(name, "2026-09-11", 1260, 2) + shop(name, "2026-09-25", 1260, 2))
+    product = build_products(rows)[0]
+    assert (product["usual"], product["low"]) == (1260, None)
+
+
+def test_products_sale_after_price_rise_skips_the_older_lower_price() -> None:
+    # 오르기 전 값(3,950)이 더 낮아도, 오른 뒤에 내려간 값(4,000)이 행사 때 최저 값이다.
+    rows = (shop("신라면(5개입)", "2026-07-24", 3950, 1) + shop("신라면(5개입)", "2026-08-28", 4150, 1)
+            + shop("신라면(5개입)", "2026-09-11", 4000, 1) + shop("신라면(5개입)", "2026-09-25", 4150, 1))
+    assert build_products(rows)[0]["low"] == {"price": 4000, "day": "2026-09-11", "pct": -4}
+
+
+def test_products_price_rise_in_two_steps_is_not_a_sale() -> None:
+    rows = (shop("고향만두(900g)", "2026-07-24", 6980, 1) + shop("고향만두(900g)", "2026-08-28", 7480, 1)
+            + shop("고향만두(900g)", "2026-09-25", 7980, 1))
+    assert build_products(rows)[0]["low"] is None
+
+
+def test_products_dip_before_price_rise_is_still_a_sale() -> None:
+    # 값이 오르기 전에 더 낮게 내려간 적이 있으면(9,980 → 3,202) 그 값은 행사로 남긴다.
+    name = "갈치(생물, 100g)"
+    rows = (shop(name, "2026-07-24", 9980, 1) + shop(name, "2026-08-28", 3202, 1)
+            + shop(name, "2026-09-11", 3530, 1) + shop(name, "2026-09-25", 10980, 1))
+    assert build_products(rows)[0]["low"] == {"price": 3202, "day": "2026-08-28", "pct": -71}
+
+
+def test_products_price_drop_still_counts_as_sale() -> None:
+    # 내리기만 한 상품은 값을 내린 것인지 행사 중인지 가릴 수 없어 행사로 둔다.
+    rows = shop("신라면(5개입)", "2026-08-28", 4150, 1) + shop("신라면(5개입)", "2026-09-25", 3950, 1)
+    assert build_products(rows)[0]["low"] == {"price": 3950, "day": "2026-09-25", "pct": -5}
 
 
 def test_build_emart_file() -> None:
@@ -126,7 +162,8 @@ def test_run_writes_latest_three_months(tmp_path: Path) -> None:
 def test_run_skips_when_newest_month_already_in_file(tmp_path: Path) -> None:
     out = tmp_path / "emart.json"
     out.write_text(json.dumps({"months": ["2026-07-24", "2026-08-28", "2026-09-25"], "groups": ["라면·면"],
-                               "items": [{"name": "신라면(5개입)", "group": "라면·면"}]}), encoding="utf-8")
+                               "items": [{"name": "신라면(5개입)", "group": "라면·면", "usual": 4150, "low": None,
+                                          "history": [["2026-09-25", 4150, 1]]}]}), encoding="utf-8")
     before = out.read_text(encoding="utf-8")
     src = FakeSource([M7, M8, M9], {})
     assert run(src, out, NOW, GROUPS) == "skipped"
@@ -175,15 +212,33 @@ def test_run_new_month_writes_groups_and_reports_other(tmp_path: Path,
 def test_run_regroups_file_without_fetching_rows(tmp_path: Path) -> None:
     out = tmp_path / "emart.json"
     old = {"source": "참가격", "generated_at": "2026-10-02T19:05:00+09:00", "months": ["2026-08-28", "2026-09-25"],
-           "as_of": "2026-09-25", "items": [{"name": "신라면(5개입)", "usual": 4150}]}
+           "as_of": "2026-09-25", "items": [{"name": "신라면(5개입)", "usual": 4150, "low": None,
+                                             "history": [["2026-09-25", 4150, 1]]}]}
     out.write_text(json.dumps(old), encoding="utf-8")
     src = FakeSource([M8, M9], {})
     assert run(src, out, NOW, GROUPS) == "regrouped"
     assert src.asked == []
     data = json.loads(out.read_text(encoding="utf-8"))
-    assert data["items"] == [{"name": "신라면(5개입)", "usual": 4150, "group": "라면·면"}]
+    assert data["items"] == [{**old["items"][0], "group": "라면·면"}]
     assert data["groups"] == ["라면·면"]
     # 화면이 바뀐 파일을 알아보도록 만든 시각을 새로 적는다.
+    assert data["generated_at"] == "2026-11-13T19:05:12+09:00"
+
+
+def test_run_applies_sale_rule_to_file_without_fetching_rows(tmp_path: Path) -> None:
+    # 행사 규칙을 고친 뒤 새 달이 없어도, 기존 파일의 조사일별 값으로 평소 값과 행사 값을 다시 낸다.
+    out = tmp_path / "emart.json"
+    history = [["2026-09-25", 4150, 1], ["2026-08-28", 3950, 1]]
+    old = {"source": "참가격", "generated_at": "2026-10-02T19:05:00+09:00", "months": ["2026-08-28", "2026-09-25"],
+           "as_of": "2026-09-25", "groups": ["라면·면"],
+           "items": [{"name": "신라면(5개입)", "group": "라면·면", "usual": 4150, "history": history,
+                      "low": {"price": 3950, "day": "2026-08-28", "pct": -5}}]}
+    out.write_text(json.dumps(old), encoding="utf-8")
+    src = FakeSource([M8, M9], {})
+    assert run(src, out, NOW, GROUPS) == "regrouped"
+    assert src.asked == []
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["items"] == [{"name": "신라면(5개입)", "group": "라면·면", "usual": 4150, "history": history, "low": None}]
     assert data["generated_at"] == "2026-11-13T19:05:12+09:00"
 
 

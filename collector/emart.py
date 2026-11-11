@@ -3,7 +3,8 @@
     uv run python -m collector.emart    # 새 달이 있을 때만 최근 3개 달을 받는다
 
 키(환경변수 DATA_GO_KR_KEY, 공공데이터포털 인증키)가 없으면 아무것도 하지 않고 끝낸다.
-새 달이 없으면 참가격은 다시 받지 않고, 묶음 목록 파일(`emart_groups.json`)만 다시 붙여 본다.
+새 달이 없으면 참가격은 다시 받지 않고, 기존 파일의 조사일별 값으로 평소 값·행사 값을 다시
+내고 묶음 목록 파일(`emart_groups.json`)을 다시 붙여 본다.
 참가격 이마트 값에는 행사 값이 표시 없이 섞여 있어, 조사일마다 지점들에서 가장
 흔한 값을 대표값으로 삼고 3개월 대표값 가운데 가장 높은 값을 평소 값으로 본다.
 """
@@ -17,7 +18,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from itertools import chain
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 from collector.champrice import ChampriceError, ChampriceSource, Month, MonthSource
@@ -116,12 +117,38 @@ def representative(prices: List[int]) -> int:
     return max(counts, key=lambda p: (counts[p], p))
 
 
+def usual_and_low(history: List[List[Any]]) -> Tuple[int, Optional[Dict[str, Any]]]:
+    """조사일별 대표값으로 평소 값과 행사 때 최저 값을 낸다.
+
+    대표값 가운데 가장 높은 값을 평소 값, 가장 낮은 값을 행사 때 최저 값으로 삼는다. 최저 값이
+    평소 값과 같으면 행사가 없었던 것으로 보고, 같은 최저 값이 여러 날이면 가장 최근 날을 쓴다.
+    가장 옛 조사부터 이어진 낮은 값 가운데 그 뒤로 더 낮아진 적이 없는 값은 값이 오르기 전의
+    값이라 최저 값을 고를 때 보지 않는다(2026-11-11 결정. 1,180원이다가 1,260원으로 오른 뒤
+    그대로면 행사 없음).
+
+    Args:
+        history: 조사일별 [날, 대표값, 지점 수]. 최근 날부터.
+
+    Returns:
+        (평소 값, 행사 때 최저 값). 최저 값은 값·날·평소보다 %이고, 행사가 없었으면 None.
+    """
+    prices = [price for _, price, _ in history]
+    usual = max(prices)
+    # 가장 옛 조사(맨 끝)부터, 그 뒤로 더 낮아진 적이 없는 낮은 값을 차례로 뺀다.
+    while prices[-1] < usual and prices[-1] <= min(prices[:-1]):
+        prices.pop()
+    low_price = min(prices)
+    if low_price == usual:
+        return usual, None
+    low_day = next(day for day, price, _ in history if price == low_price)
+    return usual, {"price": low_price, "day": low_day, "pct": round((low_price - usual) / usual * 100)}
+
+
 def build_products(rows: List[ShopRow]) -> List[Dict[str, Any]]:
     """상품마다 평소 값, 행사 때 최저 값, 조사일별 대표값을 낸다.
 
-    상품명으로 묶고 조사일마다 대표값과 지점 수를 낸 뒤, 대표값 가운데 가장 높은
-    값을 평소 값, 가장 낮은 값을 행사 때 최저 값으로 삼는다. 최저 값이 평소 값과
-    같으면 행사가 없었던 것으로 보고, 같은 최저 값이 여러 날이면 가장 최근 날을 쓴다.
+    상품명으로 묶고 조사일마다 대표값과 지점 수를 낸 뒤, `usual_and_low`로 평소 값과
+    행사 때 최저 값을 낸다.
 
     Args:
         rows: 이마트 지점 줄들.
@@ -137,12 +164,7 @@ def build_products(rows: List[ShopRow]) -> List[Dict[str, Any]]:
     for name in sorted(by_name):
         days = sorted(by_name[name].items(), reverse=True)
         history = [[day.isoformat(), representative(prices), len(prices)] for day, prices in days]
-        usual = max(price for _, price, _ in history)
-        low_price = min(price for _, price, _ in history)
-        low = None
-        if low_price < usual:
-            low_day = next(day for day, price, _ in history if price == low_price)
-            low = {"price": low_price, "day": low_day, "pct": round((low_price - usual) / usual * 100)}
+        usual, low = usual_and_low(history)
         products.append({"name": name, "usual": usual, "low": low, "last_day": history[0][0],
                          "stores": history[0][2], "history": history})
     return products
@@ -196,12 +218,32 @@ def with_groups(data: Dict[str, Any], groups: Dict[str, List[str]]) -> Dict[str,
     return {**data, "groups": [g for g in [*groups, OTHER_GROUP] if g in used], "items": items}
 
 
+def with_usual_and_low(data: Dict[str, Any]) -> Dict[str, Any]:
+    """상품마다 조사일별 대표값으로 평소 값과 행사 때 최저 값을 다시 낸 새 파일 내용을 만든다.
+
+    계산 규칙을 고친 뒤 참가격을 다시 받지 않아도 기존 파일에 반영되게 하려는 것이다.
+    받은 `data`는 바꾸지 않는다.
+
+    Args:
+        data: 파일 내용(`items`마다 조사일별 대표값 `history`가 있다).
+
+    Returns:
+        상품마다 `usual`과 `low`를 다시 낸 파일 내용.
+    """
+    items = []
+    for item in data["items"]:
+        usual, low = usual_and_low(item["history"])
+        items.append({**item, "usual": usual, "low": low})
+    return {**data, "items": items}
+
+
 def run(source: MonthSource, out_path: Path, now: datetime, groups: Dict[str, List[str]]) -> str:
     """새 달이 있으면 최근 3개 달을 받아 화면용 파일을 새로 쓴다.
 
     1. 설명서의 달 목록에서 뒤의 `MONTHS`개를 고른다.
-    2. 기존 파일의 달 목록에 가장 새 달이 이미 있으면 참가격은 받지 않고, 기존 파일에
-       묶음만 다시 붙여 본다. 달라졌으면(묶음 목록을 고쳤으면) 만든 시각을 새로 적어 쓴다.
+    2. 기존 파일의 달 목록에 가장 새 달이 이미 있으면 참가격은 받지 않고, 기존 파일의
+       조사일별 값으로 평소 값·행사 값을 다시 내고 묶음을 다시 붙여 본다. 달라졌으면(묶음
+       목록이나 계산 규칙을 고쳤으면) 만든 시각을 새로 적어 쓴다.
     3. 새 달이 있으면 고른 달들의 줄을 이어 받아 계산하고 묶음을 붙여 파일을 통째로 바꿔 넣는다.
     받다가 실패하거나 이마트 줄이 없으면 기존 파일은 그대로 둔다. 어느 쪽이든 "기타"에 든
     상품이 있으면 이름을 남긴다(목록에 더할 상품).
@@ -213,7 +255,7 @@ def run(source: MonthSource, out_path: Path, now: datetime, groups: Dict[str, Li
         groups: 묶음 이름 → 상품명 목록.
 
     Returns:
-        "updated"(새 달), "regrouped"(묶음만 다시 붙임) 또는 "skipped".
+        "updated"(새 달), "regrouped"(참가격은 받지 않고 묶음과 평소 값·행사 값만 다시 냄) 또는 "skipped".
 
     Raises:
         ChampriceError: 달 목록이 없거나, 받기가 실패했거나, 이마트 줄이 없는 경우.
@@ -223,7 +265,7 @@ def run(source: MonthSource, out_path: Path, now: datetime, groups: Dict[str, Li
         raise ChampriceError("설명서에 달 목록이 없습니다.")
     existing = load_prices(out_path)
     if existing is not None and months[-1].as_of.isoformat() in existing.get("months", []):
-        data = with_groups(existing, groups)
+        data = with_groups(with_usual_and_low(existing), groups)
         result = "skipped" if data == existing else "regrouped"
         if result == "regrouped":
             data["generated_at"] = now.isoformat(timespec="seconds")
@@ -261,7 +303,7 @@ def main() -> int:
     if result == "skipped":
         print("참가격: 새 달이 없어 건너뜁니다")
     elif result == "regrouped":
-        print(f"참가격: 새 달이 없어 {EMART_PATH}에 묶음만 다시 붙였습니다")
+        print(f"참가격: 새 달이 없어 {EMART_PATH}의 묶음과 평소 값·행사 값만 다시 냈습니다")
     else:
         print(f"참가격: {EMART_PATH}를 새로 썼습니다")
     return 0
