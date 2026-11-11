@@ -276,6 +276,52 @@ def test_run_prints_summary(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
     assert f"새 항목 {len(ITEMS)}개" in printed and f"전체 평균과 맞은 품종 {len(ITEMS)}개" in printed
 
 
+class NewKindSource(FailingSource):
+    """샘플 과일류에 품종 목록에 없는 줄을 더해 준다.
+
+    감귤 노지는 상품 줄과 중품 줄이, 딸기 설향은 중품 줄만 온다. 품종 목록은 상품 줄로 만들므로
+    목록을 다시 만들면 감귤 노지만 새로 들어온다.
+    """
+
+    def category(self, category_code: str, day: date) -> Dict[str, Any]:
+        raw = json.loads(json.dumps(self.inner.category(category_code, day)))
+        if category_code == "400":
+            top = next(row for row in raw["data"]["item"] if row["rank"] == "상품")
+            tangerine = {**top, "itemcode": "915", "kindcode": "01", "item_name": "감귤", "kind_name": "노지"}
+            raw["data"]["item"] += [
+                tangerine,
+                {**tangerine, "rank": "중품", "rank_code": "05"},
+                {**top, "itemcode": "926", "kindcode": "02", "item_name": "딸기", "kind_name": "설향",
+                 "rank": "중품", "rank_code": "05"},
+            ]
+        return raw
+
+
+def test_run_reports_kinds_missing_from_item_list(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    out = tmp_path / "prices.json"
+    src = NewKindSource(sample_source(tmp_path, date(2026, 11, 2)))
+    assert run(src, ITEMS, out, date(2026, 11, 2)) == "updated"
+    printed = capsys.readouterr().out
+    assert "품종 목록에 없는 품종 1개: 감귤 노지." in printed
+    assert "딸기" not in printed
+    # 기록만 남기고 화면용 파일에는 넣지 않는다.
+    assert [e["id"] for e in read(out)["items"]] == [i.id for i in ITEMS]
+
+
+def test_run_reports_nothing_when_every_kind_is_listed(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    run(sample_source(tmp_path, date(2026, 11, 2)), ITEMS, tmp_path / "prices.json", date(2026, 11, 2))
+    assert "품종 목록에 없는" not in capsys.readouterr().out
+
+
+def test_run_reports_livestock_rows_missing_from_item_list_by_grade(tmp_path: Path,
+                                                                    capsys: pytest.CaptureFixture[str]) -> None:
+    # 축산물은 등급마다 한 품종이라, 등급만 다른 줄도 목록에 없으면 남긴다.
+    livestock = [i for i in ALL_ITEMS if i.category_code == "500"]
+    write_sample(tmp_path / "sample", ITEMS + livestock, date(2026, 11, 2))
+    run(SampleSource(tmp_path / "sample"), ITEMS + [LIVESTOCK_ITEM], tmp_path / "prices.json", date(2026, 11, 2))
+    assert f"품종 목록에 없는 품종 {len(livestock) - 1}개: " in capsys.readouterr().out
+
+
 def test_run_without_sample_files_says_how_to_make_them(tmp_path: Path) -> None:
     with pytest.raises(CollectError, match="make_sample") as err:
         run(SampleSource(tmp_path / "없음"), ITEMS, tmp_path / "prices.json", date(2026, 11, 3))

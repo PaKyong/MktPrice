@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from zoneinfo import ZoneInfo
 
 from collector.compute import LARGE_ONLY, THRESHOLD_PCT, WINDOW_DAYS, build_entry, build_national_entry
-from collector.items import ITEMS_PATH, load_items
+from collector.items import ITEMS_PATH, RANK_PREFERENCE, load_items
 from collector.kamis import (LOOKBACK_DAYS, SAMPLE_DIR, Source, latest_overall, make_source, months_back,
                              past_overall)
 from collector.models import CATEGORIES, LIVESTOCK, Item, OverallRow
@@ -38,8 +38,9 @@ KST = ZoneInfo("Asia/Seoul")
 
 
 def _collect_overall(source: Source, items: List[Item], today: date
-                     ) -> Tuple[Dict[Tuple[str, str], OverallRow], Dict[str, str], List[str]]:
-    """가장 최근 조사일의 전체 평균에서 품종별 상품 줄, 실패한 부류(부류 → 이유), 날마다의 응답 모양을 돌려준다.
+                     ) -> Tuple[Dict[Tuple[str, str], OverallRow], Dict[str, str], List[str], List[str]]:
+    """가장 최근 조사일의 전체 평균에서 품종별 상품 줄, 실패한 부류(부류 → 이유), 날마다의 응답 모양,
+    품종 목록에 없는 품종의 이름을 돌려준다.
 
     품종 목록에 있는 농수산물 줄(품목·품종 코드와 등급 번호가 같은 줄)에 값이 있는 날을 찾는다.
     축산물 줄은 날을 정할 때 보지 않는다. 농수산물 값이 아직 안 올라온 날에도 축산물에는 값이
@@ -50,7 +51,33 @@ def _collect_overall(source: Source, items: List[Item], today: date
     rows, failed, tried = latest_overall(
         source, today, lambda row: _row_key(row) in wanted and row.category_code != LIVESTOCK)
     overall = {_row_key(row): row for row in rows if _row_key(row) in wanted}
-    return overall, failed, tried
+    return overall, failed, tried, _unlisted(rows, items)
+
+
+def _unlisted(rows: List[OverallRow], items: List[Item]) -> List[str]:
+    """그날 전체 평균에는 있는데 품종 목록에 없는 품종의 이름을 돌려준다(2026-11-11 결정).
+
+    품종 목록을 다시 만들면 새로 들어올 줄만 고른다(`collector.items.build_items`와 같은 기준).
+    농수산물은 품종(품목·품종 코드)이 목록에 없고 등급이 목록에 넣는 등급인 줄, 축산물은 등급 번호까지
+    같은 줄이 목록에 없는 줄이다.
+
+    Args:
+        rows: 그날 전체 평균의 모든 등급 줄.
+        items: 품종 목록.
+
+    Returns:
+        이름 순으로 정렬한 품종 이름(축산물은 등급까지).
+    """
+    kinds = {(item.item_code, item.kind_code) for item in items}
+    listed = {_row_key(item) for item in items}
+    names: Set[str] = set()
+    for row in rows:
+        if row.category_code == LIVESTOCK:
+            if _row_key(row) not in listed:
+                names.add(f"{row.item_name} {row.kind_name} {row.rank}")
+        elif row.rank in RANK_PREFERENCE and (row.item_code, row.kind_code) not in kinds:
+            names.add(f"{row.item_name} {row.kind_name}")
+    return sorted(names)
 
 
 def _fill_past(source: Source, overall: Dict[Tuple[str, str, str], OverallRow], as_of: date,
@@ -169,8 +196,8 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
     4. 품종마다 기준일부터 거꾸로 31일의 가게 값을 받아 항목을 만든다. 축산물은 가게별 값이
        없어, 부류별 API를 날마다 불러 모은 전국 평균으로 만든다. 전체 평균의 조사 단위가 품종
        목록 파일과 다르면 그 품종은 실패로 다룬다.
-    5. 한 줄 요약(축산물은 따로 한 줄, 빠진 축산물은 이름까지)을 찍고, 결과가 수상하면(새 항목이
-       없음, 전체 평균과 맞은 품종이 없음) 기존 파일을 지키려고 멈춘다.
+    5. 한 줄 요약(축산물은 따로 한 줄, 빠진 축산물은 이름까지)과 품종 목록에 없는 품종의 이름을
+       찍고, 결과가 수상하면(새 항목이 없음, 전체 평균과 맞은 품종이 없음) 기존 파일을 지키려고 멈춘다.
     6. 실패한 품종은 기존 항목을 남기되(기존 파일 출처가 같을 때만), 새 파일을
        통째로 바꿔 넣는다.
 
@@ -194,7 +221,7 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
     existing = load_prices(out_path)
     check_sample_guard(existing, source.name)
 
-    overall, failed_categories, tried = _collect_overall(source, items, today)
+    overall, failed_categories, tried, unlisted = _collect_overall(source, items, today)
     if len(failed_categories) == len(CATEGORIES):
         reasons = "; ".join(f"부류 {code}: {reason}" for code, reason in failed_categories.items())
         raise CollectError(f"전체 평균을 한 부류도 받지 못했습니다({reasons}).")
@@ -261,6 +288,10 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
     if unit_mismatch:
         print(f"단위가 다른 품종 {len(unit_mismatch)}개(목록 파일→KAMIS): {', '.join(unit_mismatch)}. "
               "`uv run python -m collector.make_items`로 품종 목록을 다시 만드세요.")
+    if unlisted:
+        # 기록만 남기고 목록에 넣지는 않는다. 이름과 조사 단위를 사람이 본 뒤 넣는다.
+        print(f"품종 목록에 없는 품종 {len(unlisted)}개: {', '.join(unlisted)}. "
+              "화면에 넣으려면 Actions의 \"품종 목록도 다시 만들기\"로 돌리세요.")
     if items and len(failed_ids) == len(items):
         raise CollectError("모든 품종을 받지 못했습니다.")
     if items and not entries:
