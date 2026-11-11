@@ -62,11 +62,27 @@ def test_run_with_sample_then_skip(tmp_path: Path) -> None:
     assert (data["as_of"], data["source"]) == ("2026-11-02", "샘플")
     assert data["basis"] == {"compare": "전국 대형유통 평균", "season": "KAMIS 전체 평균"}
     assert data["threshold_pct"] == 15
+    assert data["no_price"] == []
     assert [e["id"] for e in data["items"]] == [i.id for i in ITEMS]
     assert all(e["as_of"] == "2026-11-02" and e["stores"] >= 20 for e in data["items"])
     before = out.read_bytes()
     assert run(src, ITEMS, out, date(2026, 11, 3)) == "skipped"
     assert out.read_bytes() == before
+
+
+def test_run_lists_item_names_that_have_no_price_now(tmp_path: Path) -> None:
+    # 품종 목록에는 있지만 값이 하나도 없는 품목의 이름을 남긴다(검색에서 "요즘 조사 값이 없어요"로 알린다).
+    # 품종 하나라도 값이 있는 품목은 넣지 않고, 품종이 여럿이어도 이름은 한 번만 넣는다.
+    names = {i.item_name for i in ITEMS}
+    sibling = next(i for i in ALL_ITEMS if i.item_name in names and i not in ITEMS and i.category_code != "500")
+    grapes = [i for i in ALL_ITEMS if i.item_name == "포도"]
+    assert len(grapes) > 1 and "포도" not in names
+    out = tmp_path / "prices.json"
+    # 샘플은 ITEMS의 값만 만들므로 더한 품종들은 값이 없다.
+    run(sample_source(tmp_path, date(2026, 11, 2)), ITEMS + [sibling] + grapes, out, date(2026, 11, 3))
+    data = read(out)
+    assert [e["id"] for e in data["items"]] == [i.id for i in ITEMS]
+    assert data["no_price"] == ["포도"]
 
 
 def test_run_keeps_old_value_when_one_item_fails(tmp_path: Path) -> None:

@@ -58,6 +58,12 @@ function ro(word) {
   return final === 0 || final === 8 ? "로" : "으로";
 }
 
+// 이름 뒤에 붙일 "은"·"는". 마지막 글자가 한글이고 받침이 있으면 "은".
+function eun(word) {
+  const code = word.charCodeAt(word.length - 1) - 0xac00;
+  return code >= 0 && code < 11172 && code % 28 ? "은" : "는";
+}
+
 // 지난 값 비교 한 마디: "15% 올랐어요"(파랑), "48% 내렸어요"(빨강), 반올림해 0이면 "같아요".
 function changeText(v) {
   const r = Math.round(Math.abs(v));
@@ -433,12 +439,18 @@ function renderSearch() {
   // 화면에 보이는 대로 "한우 등심", "사과 후지"라고 쳐도 나오게 하려는 것이다.
   const found = [...browseOrder().filter((e) => match(e.item + e.kind)),
                  ...state.emartItems.filter((e) => match(e.name))];
+  // 품종 목록에는 있지만 지금 값이 없는 품목(철이 지난 감귤·딸기 등)은 한 줄로 알린다.
+  // 이름을 잘못 친 것이 아니라 값이 없는 것임을 알게 하려는 것이다. 옛 가격 파일에는 이 목록이 없다.
+  const gone = (state.data.no_price ?? []).filter(match);
+  const goneLine = gone.length
+    ? h("p", { class: "found" }, `${gone.join(", ")}${eun(gone.at(-1))} 요즘 조사 값이 없어요`) : null;
   if (!found.length) {
-    view.append(h("p", { class: "found" }, `"${q}"에 맞는 품목이 없어요. 다른 이름으로 찾아 보세요.`));
+    view.append(goneLine ?? h("p", { class: "found" }, `"${q}"에 맞는 품목이 없어요. 다른 이름으로 찾아 보세요.`));
     return;
   }
   view.append(h("p", { class: "found" }, `"${q}"${ro(q)} 찾은 품종 ${found.length}개`),
     h("ul", { class: "rows" }, found.map((e) => itemRow(e, true, true))));
+  if (goneLine) view.append(goneLine);
 }
 
 // ---- 상세 ----

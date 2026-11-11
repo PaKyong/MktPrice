@@ -200,7 +200,8 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
        찍고, 결과가 수상하면(새 항목이 없음, 전체 평균과 맞은 품종이 없음) 기존 파일을 지키려고 멈춘다.
        새 항목과 받지 못한 품종은 농수산물만 센다(축산물은 가게 값 없이도 만들어져서).
     6. 실패한 품종은 기존 항목을 남기되(기존 파일 출처가 같을 때만), 앞 파일과 새 파일의 품종 수를
-       찍고 새 파일을 통째로 바꿔 넣는다.
+       찍고 새 파일을 통째로 바꿔 넣는다. 품종 목록에는 있지만 값이 하나도 없는 품목의 이름도
+       파일에 넣는다(화면이 검색에서 알린다).
 
     Args:
         source: KAMIS 또는 샘플 받기 쪽.
@@ -312,6 +313,10 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
     # 품종이 갑자기 줄거나 옛 값이 많이 남은 날을 실행 기록 한 줄로 알아보게 한다.
     print(f"앞 파일 {len((existing or {}).get('items', []))}개 → 새 파일 {len(merged)}개"
           f"(옛 값으로 남긴 품종 {len(merged) - len(entries)}개)")
+    # 품종 목록에는 있지만 화면에 낼 값이 하나도 없는 품목 이름(철이 지난 감귤·딸기 등).
+    # 화면이 검색에서 "요즘 조사 값이 없어요"라고 알리는 데 쓴다(2026-11-11 결정).
+    shown = {entry["item"] for entry in merged}
+    no_price = list(dict.fromkeys(item.item_name for item in items if item.item_name not in shown))
     write_prices(out_path, {
         "as_of": as_of.isoformat(),
         "source": source.name,
@@ -319,6 +324,7 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
         "basis": {"compare": "전국 대형유통 평균" if LARGE_ONLY else "전국 평균",
                   "season": "KAMIS 전체 평균"},
         "threshold_pct": THRESHOLD_PCT,
+        "no_price": no_price,
         "items": merged,
     })
     return "updated"
