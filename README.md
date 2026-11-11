@@ -23,7 +23,7 @@
 ## 쓰는 법
 
 1. 주소를 열고 홈 화면에 추가합니다(아이폰 Safari: 공유 → 홈 화면에 추가, 안드로이드 Chrome: 메뉴 → 홈 화면에 추가).
-2. 화면 아래 검색창에 품목 이름을 치거나(초성만 쳐도 되고, "돼지 삼겹살"처럼 띄어 써도 됩니다. 예: ㅅㄹㅁ → 신라면), "전체 품목"의 칸(싼 편, 채소류, 이마트 라면·면 …)을 눌러 찾습니다.
+2. 화면 아래 검색창에 품목 이름을 치거나(초성만 쳐도 되고, "돼지 삼겹살"처럼 띄어 써도 됩니다. 예: ㅅㄹㅁ → 신라면), "전체 품목"의 칸(싼 편, 채소류, 이마트 라면·면 …)을 눌러 찾습니다. 철이 지나 조사 값이 없는 품목(감귤, 딸기 등)을 찾으면 "감귤은 요즘 조사 값이 없어요"라고 나옵니다.
 3. 품목을 누르면 상세 화면이 나옵니다. 오른쪽 위 ☆를 누르면 즐겨찾기에 들어가고, 목록에서 이름 뒤에 노란 ★가 붙습니다. 첫 화면 즐겨찾기에서 줄을 길게 눌러 끌면 순서가 바뀌고, 옆으로 밀면 빠집니다(아래 띠의 "되돌리기"로 5초 안에 되살림).
 4. 상세 화면의 "가게마다" 막대에서 대형마트 절반이 얼마 사이인지 보고("대형마트 절반은 480~796원이에요"), 가격표 값과 눈으로 견줍니다.
 5. 마트 안에서 인터넷이 안 돼도 마지막으로 받은 값으로 열립니다.
@@ -41,7 +41,7 @@
 ```
 [GitHub Actions: 평일 한국 시각 19시 17분 예약, Actions 탭의 "Run workflow"로도 돌릴 수 있음]
   KAMIS API  → collector(파이썬) → data/prices.json
-  참가격 API → collector(파이썬) → data/emart.json   (새 달이 있을 때만)
+  참가격 API → collector(파이썬) → data/emart.json   (새 달이 있을 때만 받음. 묶음과 행사 값은 실행마다 다시 계산)
   → 바뀐 파일만 커밋 → GitHub Pages에 배포
 
 [GitHub Pages]
@@ -55,6 +55,8 @@
 - 계산(평균, 단위 가격, 평년 대비, 평소 값 등)은 모두 수집 스크립트에서 끝냅니다. 화면은 보여 주기만 합니다.
 - 브라우저는 API를 직접 부르지 않습니다. 키가 화면 코드에 드러나지 않게 하려는 것입니다.
 - 받기가 실패하면 사이트는 마지막으로 받은 값을 그대로 보여 줍니다. 그날 Actions 실행은 실패로 끝나 GitHub이 메일을 보냅니다.
+  - 몇 품종만 못 받은 날은 그 품종만 앞 값으로 남기고 나머지는 새 값으로 바꿉니다(화면에 "10월 14일 값"처럼 날짜가 붙습니다).
+  - 농수산물이 통째로 빠지는 것처럼 결과가 수상하면 파일을 바꾸지 않고 실패로 끝냅니다.
 
 ## 데이터 출처
 
@@ -67,12 +69,14 @@
 
 ```bash
 uv run python -m collector.make_sample   # 키 없이 쓸 샘플 응답 만들기(collector/sample/, git에 넣지 않음)
-uv run python -m collector               # KAMIS 값 받기 → data/prices.json (키가 없으면 샘플로)
+uv run python -m collector               # KAMIS 값 받기 → data/prices.json (키가 없으면 샘플로. 아래 참고)
 uv run python -m collector.emart         # 이마트 값 받기 → data/emart.json (키가 없으면 건너뜀)
 uv run python -m collector.make_items    # 키로 KAMIS 품종 목록 다시 만들기 → collector/items.json
 uv run pytest                            # 시험
 uv run python -m http.server 8000        # 화면 보기: http://localhost:8000
 ```
+
+저장소의 `data/prices.json`에는 실제 값이 들어 있습니다. 실제 값이 든 파일은 샘플로 덮어쓰지 않으므로, 키 없이 `uv run python -m collector`를 돌리면 "샘플로 덮어쓰지 않습니다"라고 하고 멈춥니다.
 
 키는 환경변수로 넣습니다.
 
@@ -92,8 +96,9 @@ uv run python -m http.server 8000        # 화면 보기: http://localhost:8000
 - 화면 파일(HTML·CSS·JS·아이콘)을 고치면 `sw.js` 맨 위 `CACHE`의 숫자를 올립니다(예: `mp-v27` → `mp-v28`). 안 올리면 폰에 옛 화면이 남습니다. 올리면 폰은 새 화면을 받는 대로 저절로 한 번 다시 엽니다.
 - 이마트 묶음은 [collector/emart_groups.json](collector/emart_groups.json)을 손으로 고칩니다(묶음 이름 → 상품명 목록, 적은 순서가 칸 순서). 목록에 없는 새 상품은 "이마트 기타" 칸에 모이고 Actions 기록에 이름이 남습니다.
 - `data/prices.json`과 `data/emart.json`은 손으로 고치지 않습니다. Actions가 평일마다 커밋하므로 푸시 전에 `git pull --rebase`로 먼저 받아 옵니다.
+- `main`에 푸시하면 수집 없이 배포만 돕니다. 수집 코드를 고친 것은 다음 예약 실행이나 "Run workflow"에서 가격 파일에 반영됩니다.
 - 아이콘은 `uv run python tools/make_icons.py`로 다시 만듭니다.
-- 화면 글꼴(Pretendard에서 자주 쓰는 한글과 이름·화면 글자만 남긴 `fonts/mkt-sans.woff2`)은 `uv run python tools/make_font.py`로 다시 만듭니다. 품목·상품 이름에 새 글자가 생기면 `uv run pytest`의 글꼴 시험이 알려 줍니다. 원본은 git 밖 `tools/fonts-src/`에 둡니다(받는 곳은 도구 맨 위 설명).
+- 화면 글꼴(Pretendard에서 자주 쓰는 한글과 이름·화면 글자만 남긴 `fonts/mkt-sans.woff2`)은 `uv run python tools/make_font.py`로 다시 만듭니다. 품목·상품 이름이나 화면 글에 글꼴에 없는 글자가 생기면 `uv run pytest`의 글꼴 시험이 알려 줍니다. 원본은 git 밖 `tools/fonts-src/`에 둡니다(받는 곳은 도구 맨 위 설명).
 
 ## 폴더
 
