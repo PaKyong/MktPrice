@@ -21,7 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 화면 파일(HTML·CSS·JS·아이콘)을 고치면 `sw.js` 맨 위 `CACHE`의 숫자를 올린다(예: `mp-v1` → `mp-v2`). 안 올리면 폰에 저장된 옛 화면이 계속 열린다. 아이콘은 `uv run python tools/make_icons.py`로 다시 만든다.
 
 ## 예약 실행과 배포 (`.github/workflows/collect.yml`)
-- 평일 한국 19시(UTC 10시)와 Actions 탭의 "Run workflow"(지금 실행)로 돈다. Secrets에 `KAMIS_CERT_KEY`, `KAMIS_CERT_ID`가 없으면 "키 없음"을 남기고 수집을 건너뛴 뒤 배포만 한다. 키가 있으면 수집하고 `data/prices.json`이 바뀌었을 때만 `github-actions[bot]`이 `chore(data): <기준일> 가격 갱신`으로 커밋·푸시한다.
+- 평일 한국 19시 17분(UTC 10시 17분) 예약과 Actions 탭의 "Run workflow"(지금 실행)로 돈다. Secrets에 `KAMIS_CERT_KEY`, `KAMIS_CERT_ID`가 없으면 "키 없음"을 남기고 수집을 건너뛴 뒤 배포만 한다. 키가 있으면 수집하고 `data/prices.json`이 바뀌었을 때만 `github-actions[bot]`이 `chore(data): <기준일> 가격 갱신`으로 커밋·푸시한다.
 - 참가격(이마트 값)은 KAMIS 커밋 다음에 돈다. Secrets에 `DATA_GO_KR_KEY`가 없으면 "참가격 키 없음"을 남기고 건너뛴다. `data/emart.json`이 바뀌었을 때만(한 달에 한 번) `chore(data): 이마트 <조사일> 값 갱신`으로 커밋한다. 받다가 실패하면 기존 파일을 두고 배포까지 한 뒤, 맨 끝 `emart-check` 작업이 실행을 실패로 끝낸다(메일이 온다).
 - 배포도 같은 워크플로가 한다(Actions 기본 토큰으로 푸시한 커밋은 다른 워크플로를 깨우지 않아서). 사람이 `main`에 푸시하면 수집 없이 배포만 돈다. 배포에는 화면 파일과 `data/`만 들어간다. 배포 단계가 실패하면 같은 실행 안에서 한 번 더 한다. 저장소 설정에서 Pages 출처가 "GitHub Actions"여야 한다.
 - 품종 목록 다시 만들기: Actions의 "Run workflow" 창에서 "품종 목록도 다시 만들기"를 켜고 돌리면, Secrets의 키로 `collector.make_items`를 돌린 뒤 `--force`로 수집해 `collector/items.json`과 `data/prices.json`을 함께 커밋한다(`…, 품종 목록 다시 만듦`).

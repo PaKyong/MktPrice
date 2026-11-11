@@ -39,7 +39,7 @@
 서버 없이 GitHub만으로 돌아갑니다.
 
 ```
-[GitHub Actions: 평일 한국 시각 19시, Actions 탭의 "Run workflow"로도 돌릴 수 있음]
+[GitHub Actions: 평일 한국 시각 19시 17분 예약, Actions 탭의 "Run workflow"로도 돌릴 수 있음]
   KAMIS API  → collector(파이썬) → data/prices.json
   참가격 API → collector(파이썬) → data/emart.json   (새 달이 있을 때만)
   → 바뀐 파일만 커밋 → GitHub Pages에 배포
