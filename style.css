@@ -85,7 +85,6 @@ button, input { font: inherit; color: inherit; letter-spacing: inherit; }
 /* 가격 숫자: 자리 폭을 같게. "원"은 <small>로 한 단계 작게 붙인다 */
 .num { font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
 .num small { margin-left: 1px; font-weight: 500; letter-spacing: -0.01em; }
-.muted { color: var(--muted); }
 .down { color: var(--down); }
 .up { color: var(--up); }
 
@@ -256,8 +255,9 @@ body.detail .view { padding-bottom: calc(40px + var(--safe-b)); }
 .ruler__dot--low { background: var(--down); }
 .ruler__lab { position: absolute; top: 20px; transform: translateX(-50%); color: var(--sub); font-size: 12px;
   font-weight: 500; line-height: 1.4; white-space: nowrap; }
-.ruler__lab span { margin-left: 4px; font-weight: 400; color: var(--muted); }
-.ruler__lab span:first-child { margin-left: 0; }
+.ruler__lab span { font-weight: 400; color: var(--muted); }
+/* 숫자 뒤에 오는 흐린 말("5,900 행사")만 띄운다. 숫자 없이 혼자 오는 "평균"은 눈금 한가운데 둔다. */
+.ruler__lab .ruler__sub { margin-left: 4px; }
 .range__cap { margin: 6px 0 0; color: var(--sub); font-size: 13.5px; }
 
 .chart { display: block; width: 100%; height: auto; margin-top: 8px; overflow: visible; }

@@ -256,6 +256,9 @@ const HOLD_MS = 450;
 const MOVE_PX = 10;
 function setupFavGestures(ul) {
   let g = null;
+  // 끌거나 민 직후의 눌림(click)을 막을 끝 시각. 손가락이 움직인 뒤에는 눌림이 아예 안 오기도 해서,
+  // "다음 눌림 한 번"으로 막으면 그 표시가 남아 나중의 진짜 누름을 먹는다.
+  let blockClickUntil = 0;
   const reset = () => {
     if (!g) return;
     clearTimeout(g.timer);
@@ -309,8 +312,8 @@ function setupFavGestures(ul) {
     if (!g) return;
     const { li, mode, dx, start } = g;
     const id = li.dataset.id;
-    // 끌거나 민 다음의 눌림(click)은 상세로 가지 않게 한 번 막는다.
-    if (mode === "drag" || mode === "swipe") ul.dataset.blockClick = "1";
+    // 끌거나 민 바로 다음의 눌림(click)은 상세로 가지 않게 막는다.
+    if (mode === "drag" || mode === "swipe") blockClickUntil = Date.now() + 400;
     reset();
     if (mode === "drag") {
       const to = [...ul.children].indexOf(li);
@@ -332,9 +335,9 @@ function setupFavGestures(ul) {
   });
   ul.addEventListener("touchcancel", reset);
   ul.addEventListener("click", (ev) => {
-    if (ul.dataset.blockClick) {
+    if (Date.now() < blockClickUntil) {
       ev.preventDefault();
-      delete ul.dataset.blockClick;
+      blockClickUntil = 0;
     }
   }, true);
   // 길게 누르면 뜨는 링크 메뉴(안드로이드)를 막는다. 아이폰 미리보기는 CSS로 막는다.
@@ -395,7 +398,7 @@ const MORE_WORDS = {
   생수: ["삼다수", "아이시스"],
   물: ["삼다수", "아이시스"],
   휴지: ["화장지", "3겹"],
-  맥주: ["카스", "하이트", "에일"],
+  맥주: ["카스프레쉬", "하이트", "에일"],
   소주: ["참이슬", "처음처럼"],
   커피: ["맥심", "카누", "맥스웰", "네스프레소", "돌체구스토", "라떼", "콜드브루"],
   아이스크림: ["메로나", "월드콘", "부라보콘", "투게더", "싸만코", "돼지바", "바밤바"],
@@ -413,7 +416,8 @@ const initials = (s) => [...s].map((ch) => {
 function matcher(query) {
   const q = norm(query);
   if (/^[ㄱ-ㅎ]+$/.test(q)) return (name) => initials(norm(name)).includes(q);
-  const words = [q, ...(MORE_WORDS[q] ?? [])];
+  // "constructor"처럼 객체에 원래 있는 이름을 치면 표에 없는 것으로 다룬다.
+  const words = [q, ...(Object.hasOwn(MORE_WORDS, q) ? MORE_WORDS[q] : [])];
   return (name) => {
     const n = norm(name);
     return words.some((w) => n.includes(w));
@@ -485,7 +489,7 @@ function priceRuler({ min, max, band, avg, dots = [], labels }) {
     avg !== undefined ? h("div", { class: "ruler__avg", style: `left:${at(avg)}%` }) : null,
     dots.map(([v, cls]) => h("div", { class: `ruler__dot ${cls}`, style: `left:${at(v)}%` })),
     labels.map(([v, text, sub]) => h("div", { class: "ruler__lab num", style: `left:${at(v)}%` },
-      text, sub ? h("span", {}, sub) : null)));
+      text, sub ? h("span", { class: text ? "ruler__sub" : null }, sub) : null)));
 }
 
 // 상세 정보 줄: 왼쪽 보조 글씨 이름, 오른쪽 값.
@@ -536,7 +540,7 @@ function renderEmartDetail(e) {
       range,
       h("h2", { class: "sec" }, "최근 3개월 조사"),
       h("ul", { class: "info" }, e.history.map(([day, price]) =>
-        info(md(day), h("span", { class: day === low?.day ? "num down" : "num" }, won(price))))),
+        info(md(day), h("span", { class: price === low?.price ? "num down" : "num" }, won(price))))),
       h("p", { class: "detail__foot" },
         "한국소비자원 참가격. 행사 표시가 없어서 3개월 동안 본 값 가운데 가장 높은 값을 평소 값으로 봤어요.")));
 }
