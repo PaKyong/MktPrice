@@ -3,7 +3,7 @@
 import json
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Set, Tuple
 
 import pytest
 
@@ -165,6 +165,57 @@ def test_run_fills_month_ago_from_nearest_survey_day(tmp_path: Path) -> None:
     past = [d for d in src.days if d < date(2026, 11, 1)]
     assert sorted(set(past)) == [date(2026, 10, 1), date(2026, 10, 2)]
     assert len(past) == 2 * 5
+
+
+class MondaySource(FailingSource):
+    """샘플을 읽되, 월요일(11-09)에 수산물 줄의 평년 칸만 비어서 오는 것을 흉내 낸다.
+
+    주말(11-08, 11-07)은 "데이터 없음"이고, 금요일(11-06)에는 모든 줄의 평년 칸에 `friday_normal`이 온다.
+    """
+
+    def __init__(self, inner: SampleSource, friday_normal: str) -> None:
+        super().__init__(inner)
+        self.friday_normal = friday_normal
+        self.calls: List[Tuple[str, date]] = []
+
+    def category(self, category_code: str, day: date) -> Dict[str, Any]:
+        self.calls.append((category_code, day))
+        if day in (date(2026, 11, 8), date(2026, 11, 7)):
+            return {"data": ["001"]}
+        raw = json.loads(json.dumps(self.inner.category(category_code, day)))
+        for row in raw["data"]["item"] if isinstance(raw["data"], dict) else []:
+            if day == date(2026, 11, 6):
+                row["day1"], row["dpr7"] = "당일 (11/06)", self.friday_normal
+            elif category_code == "600":
+                row["dpr7"] = "-"
+        return raw
+
+
+def test_run_fills_empty_normal_from_previous_survey_day(tmp_path: Path) -> None:
+    out = tmp_path / "prices.json"
+    src = MondaySource(sample_source(tmp_path, date(2026, 11, 9)), friday_normal="2,000")
+    assert run(src, ITEMS, out, date(2026, 11, 9)) == "updated"
+    fish = next(i for i in ITEMS if i.category_code == "600")
+    row = next(r for r in src.inner.category("600", date(2026, 11, 9))["data"]["item"] if r["rank"] == "상품")
+    today = int(row["dpr1"].replace(",", ""))
+    entries = {e["id"]: e for e in read(out)["items"]}
+    assert entries[fish.id]["change"]["normal"] == round((today - 2000) / 2000 * 100, 1)
+    assert entries[fish.id]["signal"] is not None
+    # 평년 값이 온 다른 부류는 받은 값 그대로다.
+    run(src.inner, ITEMS, tmp_path / "plain.json", date(2026, 11, 9))
+    plain = {e["id"]: e for e in read(tmp_path / "plain.json")["items"]}
+    assert all(entries[i.id]["change"] == plain[i.id]["change"] for i in ITEMS if i is not fish)
+    # 수산물만, 주말을 건너 금요일까지 더 부른다.
+    near = [(code, day) for code, day in src.calls if date(2026, 11, 2) <= day < date(2026, 11, 9)]
+    assert near == [("600", date(2026, 11, 8)), ("600", date(2026, 11, 7)), ("600", date(2026, 11, 6))]
+
+
+def test_run_leaves_normal_empty_when_previous_survey_day_has_none_either(tmp_path: Path) -> None:
+    out = tmp_path / "prices.json"
+    src = MondaySource(sample_source(tmp_path, date(2026, 11, 9)), friday_normal="-")
+    assert run(src, ITEMS, out, date(2026, 11, 9)) == "updated"
+    fish = next(e for e in read(out)["items"] if e["category"] == "수산물")
+    assert fish["change"]["normal"] is None and fish["signal"] is None
 
 
 class RenamedSource(FailingSource):

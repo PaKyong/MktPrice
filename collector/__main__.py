@@ -84,6 +84,37 @@ def _fill_past(source: Source, overall: Dict[Tuple[str, str, str], OverallRow], 
     return filled
 
 
+def _fill_normal(source: Source, overall: Dict[Tuple[str, str, str], OverallRow], as_of: date,
+                 today: date) -> Dict[Tuple[str, str, str], OverallRow]:
+    """비어서 온 평년 값을 바로 앞 조사일의 평년 값으로 채운다(2026-11-11 결정).
+
+    월요일에는 수산물 열몇 품종의 평년 칸만 비어서 온다. 당일 값은 있는데 평년 값이 없는 품종이 있는
+    부류만 기준일 전날부터 거꾸로 가장 가까운 조사일 것을 한 번 더 받아, 그날 같은 줄의 평년 값을 쓴다.
+    그날에도 평년 값이 없는 품종은 비워 둔다.
+
+    Args:
+        source: KAMIS 또는 샘플 받기 쪽.
+        overall: 품종별 전체 평균 줄.
+        as_of: 기준일.
+        today: 날짜 글자의 연도를 정할 기준 날짜.
+
+    Returns:
+        채운 줄로 바꾼 새 사전.
+    """
+    filled = dict(overall)
+    for code in CATEGORIES:
+        empty = [row for row in filled.values()
+                 if row.category_code == code and row.today is not None and row.normal is None]
+        if not empty:
+            continue
+        past = {_row_key(row): row.normal
+                for row in past_overall(source, code, as_of - timedelta(days=1), today)}
+        for row in empty:
+            if past.get(_row_key(row)) is not None:
+                filled[_row_key(row)] = replace(row, normal=past[_row_key(row)])
+    return filled
+
+
 def _livestock_points(source: Source, overall: Dict[Tuple[str, str, str], OverallRow], as_of: date,
                       today: date) -> Dict[Tuple[str, str, str], List[Tuple[date, int]]]:
     """축산물 줄마다 기준일부터 거꾸로 31일의 날짜별 전국 평균을 모은다(2026-11-04 결정).
@@ -134,7 +165,7 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
        찾는다. 실패한 부류의 품종은 실패로 다룬다.
     3. 전체 평균의 당일 날짜(값이 있는 줄) 가운데 가장 늦은 날을 기준일로 삼고, 기존 파일과
        기준일·출처가 같으면 건너뛴다. 1개월 전·1년 전 값이 통째로 빈 부류는 가까운 조사일
-       값으로 채운다.
+       값으로, 평년 값이 빈 품종은 바로 앞 조사일의 평년 값으로 채운다.
     4. 품종마다 기준일부터 거꾸로 31일의 가게 값을 받아 항목을 만든다. 축산물은 가게별 값이
        없어, 부류별 API를 날마다 불러 모은 전국 평균으로 만든다. 전체 평균의 조사 단위가 품종
        목록 파일과 다르면 그 품종은 실패로 다룬다.
@@ -178,8 +209,8 @@ def run(source: Source, items: List[Item], out_path: Path, today: date, force: b
     as_of = max(row.as_of for row in priced)
     if not force and should_skip(existing, as_of, source.name):
         return "skipped"
-    overall = _fill_past(source, overall, as_of, today)
-    livestock = [item for item in items if item.category_code == LIVESTOCK]
+    overall = _fill_normal(source, _fill_past(source, overall, as_of, today), as_of, today)
+    livestock =[item for item in items if item.category_code == LIVESTOCK]
     points = (_livestock_points(source, overall, as_of, today)
               if livestock and LIVESTOCK not in failed_categories else {})
 
