@@ -230,7 +230,7 @@ function renderHome() {
   const tabs = new Map([...signalLists(), ...byCategory]);
   const chosen = tabs.has(state.chip) ? state.chip : byCategory.keys().next().value;
   const title = chosen === "싼 편" || chosen === "비싼 편"
-    ? `평년보다 ${Math.round(state.data.threshold_pct)}% 넘게 ${chosen === "싼 편" ? "싼" : "비싼"} 품종`
+    ? `평년보다 ${Math.round(state.data.threshold_pct)}% 이상 ${chosen === "싼 편" ? "싼" : "비싼"} 품종`
     : chosen;
   // 칸과 칸 제목은 이름 뒤에 흐린 개수를 따로 붙인다("채소류 43").
   const count = (n) => h("span", { class: "chip__n" }, n);

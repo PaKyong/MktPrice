@@ -5,6 +5,7 @@
 값이 없는 축산물은 날짜별 전국 평균으로 만든다(설계 18절).
 """
 
+import math
 import statistics
 from collections import defaultdict
 from datetime import date, timedelta
@@ -13,7 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from collector.models import Item, OverallRow, StoreRow
 from collector.units import round_won, unit_price
 
-# 평년 대비 이 % 이상이면 "비싼 편", 이만큼 이하로 낮으면 "싼 편"(임시 기준).
+# 평년 대비 %를 화면처럼 반올림해 이 % 이상이면 "비싼 편", 이만큼 이하로 낮으면 "싼 편"(임시 기준).
 THRESHOLD_PCT = 15.0
 # True면 대형유통 가게 값만, False면 모든 가게 값(전국 평균)을 쓴다.
 LARGE_ONLY = True
@@ -70,8 +71,12 @@ def change_pct(today: Optional[int], past: Optional[int]) -> Optional[float]:
 def signal(pct: Optional[float], threshold: float = THRESHOLD_PCT) -> Optional[str]:
     """평년 대비 %로 "비싼 편"·"보통"·"싼 편" 신호를 붙인다.
 
+    화면이 보이는 숫자(절댓값을 정수로 반올림, 반은 올림)로 판단한다. 14.5%는 화면에 "15%"로
+    보이므로 "비싼 편"이다. 같은 "15%"가 한 줄은 색이 있고 한 줄은 없지 않게 하려는 것이다
+    (2026-11-11 결정).
+
     Args:
-        pct: 반올림하기 전의 평년 대비 %.
+        pct: 파일에 적는 평년 대비 %(소수 첫째 자리).
         threshold: 경계 %.
 
     Returns:
@@ -79,11 +84,9 @@ def signal(pct: Optional[float], threshold: float = THRESHOLD_PCT) -> Optional[s
     """
     if pct is None:
         return None
-    if pct >= threshold:
-        return "비싼 편"
-    if pct <= -threshold:
-        return "싼 편"
-    return "보통"
+    if math.floor(abs(pct) + 0.5) < threshold:
+        return "보통"
+    return "비싼 편" if pct > 0 else "싼 편"
 
 
 def _round1(pct: Optional[float]) -> Optional[float]:
@@ -98,8 +101,8 @@ def build_entry(item: Item, overall: Optional[OverallRow], stores: List[StoreRow
     2. 날짜별로 묶어, 값이 있는 가장 최근 날을 품종 기준일로 삼는다.
     3. 그날 값으로 평균·조사처 수·범위와 단위 가격을, 날짜별 평균으로 30일
        추이를 낸다.
-    4. 전체 평균 줄이 있으면 시기 비교 %(소수 첫째 자리)와 신호(반올림 전
-       평년 대비 %로 판단)를 붙인다.
+    4. 전체 평균 줄이 있으면 시기 비교 %(소수 첫째 자리)와 신호(화면에 보이는
+       반올림한 평년 대비 %로 판단)를 붙인다.
 
     Args:
         item: 품종.
@@ -134,6 +137,7 @@ def build_entry(item: Item, overall: Optional[OverallRow], stores: List[StoreRow
             "year": change_pct(overall.today, overall.year_ago),
             "normal": change_pct(overall.today, overall.normal),
         }
+    change = {k: _round1(v) for k, v in pcts.items()}
     return {
         "id": item.id,
         "category": item.category_name,
@@ -148,8 +152,8 @@ def build_entry(item: Item, overall: Optional[OverallRow], stores: List[StoreRow
         "stores": len(values),
         "range": [low, high],
         "unit_range": [to_unit(low), to_unit(high)],
-        "change": {k: _round1(v) for k, v in pcts.items()},
-        "signal": signal(pcts["normal"]),
+        "change": change,
+        "signal": signal(change["normal"]),
         "trend": [[d.isoformat(), mean_won(by_day[d])] for d in sorted(by_day)],
     }
 

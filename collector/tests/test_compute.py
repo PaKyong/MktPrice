@@ -54,16 +54,18 @@ def test_change_pct() -> None:
 
 
 @pytest.mark.parametrize("pct, expected", [
-    (15.0, "비싼 편"), (14.9, "보통"), (-15.0, "싼 편"), (-14.9, "보통"), (None, None)])
+    (15.0, "비싼 편"), (14.5, "비싼 편"), (14.4, "보통"), (-15.0, "싼 편"), (-14.5, "싼 편"), (-14.4, "보통"),
+    (None, None)])
 def test_signal_boundaries(pct: Optional[float], expected: Optional[str]) -> None:
+    # 화면은 14.5를 "15%"로 보인다. 같은 "15%"가 한 줄은 색이 있고 한 줄은 없으면 안 된다(2026-11-11 결정).
     assert signal(pct) == expected
 
 
-def test_signal_uses_unrounded_pct() -> None:
-    # 14.96%는 파일에 15.0으로 적히지만 신호는 반올림 전 값으로 "보통"이다.
-    e = build_entry(APPLE, overall(today=11496, normal=10000), STORES, date(2026, 11, 2))
-    assert e["change"]["normal"] == 15.0
-    assert e["signal"] == "보통"
+def test_signal_follows_the_number_shown_on_screen() -> None:
+    # 14.46%는 파일에 14.5로 적히고 화면에 "15% 비싸요"로 보이므로 신호도 "비싼 편"이다.
+    e = build_entry(APPLE, overall(today=11446, normal=10000), STORES, date(2026, 11, 2))
+    assert e["change"]["normal"] == 14.5
+    assert e["signal"] == "비싼 편"
 
 
 def test_build_entry_large_only() -> None:
