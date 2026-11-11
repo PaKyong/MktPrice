@@ -392,7 +392,7 @@ function choose(name) {
 
 // ---- 검색 ----
 
-// 영어 대소문자와 띄어쓰기를 가리지 않게 맞춘다("cj" → CJ, "고향 만두" → 고향만두).
+// 이름은 영어 대소문자와 띄어쓰기를 가리지 않게 맞춘다("cj" → CJ, "고향 만두" → 고향만두).
 const norm = (s) => s.toLowerCase().replace(/\s+/g, "");
 // 검색어마다 더 찾을 낱말. 이름에 없는 말로 찾기 쉬운 것만 둔다(예: "계란"인데 상품명은 "유정란").
 const MORE_WORDS = {
@@ -418,15 +418,61 @@ const initials = (s) => [...s].map((ch) => {
   return code >= 0 && code < 11172 ? CHOSEONG[Math.floor(code / 588)] : ch;
 }).join("");
 
-// 검색어로 이름을 고르는 함수를 만든다. 초성만 쳤으면 이름의 초성으로("ㅅㄹㅁ" → 신라면) 찾는다.
-function matcher(query) {
-  const q = norm(query);
-  if (/^[ㄱ-ㅎ]+$/.test(q)) return (name) => initials(norm(name)).includes(q);
-  // "constructor"처럼 객체에 원래 있는 이름을 치면 표에 없는 것으로 다룬다.
-  const words = [q, ...(Object.hasOwn(MORE_WORDS, q) ? MORE_WORDS[q] : [])];
+// 받침 번호(1~27) → [남는 받침 번호, 다음 글자로 넘어갈 첫소리]. 홑받침은 통째로 넘어가고("람" → 라 + ㅁ),
+// 겹받침은 뒤 낱자만 넘어간다("닭" → 달 + ㄱ. 남는 받침 ㄱ·ㄴ·ㄹ·ㅂ의 번호가 1·4·8·17이다).
+// 겹받침 낱자는 화면 글꼴에 없어 글자로 적지 않고 번호로 둔다.
+const JONG_SPLIT = [null,
+  [0, "ㄱ"], [0, "ㄲ"], [1, "ㅅ"], [0, "ㄴ"], [4, "ㅈ"], [4, "ㅎ"], [0, "ㄷ"], [0, "ㄹ"], [8, "ㄱ"],
+  [8, "ㅁ"], [8, "ㅂ"], [8, "ㅅ"], [8, "ㅌ"], [8, "ㅍ"], [8, "ㅎ"], [0, "ㅁ"], [0, "ㅂ"], [17, "ㅅ"],
+  [0, "ㅅ"], [0, "ㅆ"], [0, "ㅇ"], [0, "ㅈ"], [0, "ㅊ"], [0, "ㅋ"], [0, "ㅌ"], [0, "ㅍ"], [0, "ㅎ"]];
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// 치는 도중인 마지막 글자를 느슨하게 맞추는 정규식 조각(2026-11-11 결정). 한글은 낱자를 하나씩 쳐서
+// 글자가 되므로, 다 치기 전의 글자로도 찾아야 "맞는 품목이 없어요"가 번쩍이지 않는다.
+// 정확히 맞는 것이 하나도 없을 때만 쓴다(늘 쓰면 "배"에 백설·지퍼백까지 나온다).
+// - 받침 없는 글자: 받침만 다른 글자도 맞다("며" → "면").
+// - 받침 있는 글자: 그 받침이 다음 글자의 첫소리일 수도 있다("람" → "라" + ㅁ으로 시작하는 글자,
+//   "닭" → "달" + ㄱ으로 시작하는 글자).
+// - 낱자 하나: 그 첫소리로 시작하는 글자("신ㄹ"의 ㄹ → 라·려·로 …).
+function typingEnd(ch) {
+  const at = (code) => String.fromCharCode(0xac00 + code);
+  const startsWith = (cho) => `[${at(cho * 588)}-${at(cho * 588 + 587)}]`;
+  if (CHOSEONG.includes(ch)) return startsWith(CHOSEONG.indexOf(ch));
+  const code = ch.charCodeAt(0) - 0xac00;
+  if (code < 0 || code >= 11172) return escapeRe(ch);
+  const jong = code % 28;
+  if (!jong) return `[${ch}-${at(code + 27)}]`;
+  const [stay, next] = JONG_SPLIT[jong];
+  return `(?:${ch}|${at(code - jong + stay)}${startsWith(CHOSEONG.indexOf(next))})`;
+}
+
+// 낱말 하나로 이름(norm을 거친 것)을 고르는 함수. 초성만 쳤으면 이름의 초성으로("ㅅㄹㅁ" → 신라면) 찾는다.
+// typing이면 치는 도중인 낱말로 보고 마지막 글자를 느슨하게 맞춘다. 더 찾을 낱말의 검색어도
+// 치는 도중일 수 있다("휴ㅈ" → "휴지"의 낱말들).
+function wordMatcher(word, typing) {
+  if (/^[ㄱ-ㅎ]+$/.test(word)) return (n) => initials(n).includes(word);
+  if (!typing) {
+    // "constructor"처럼 객체에 원래 있는 이름을 치면 표에 없는 것으로 다룬다.
+    const more = Object.hasOwn(MORE_WORDS, word) ? MORE_WORDS[word] : [];
+    return (n) => n.includes(word) || more.some((w) => n.includes(w));
+  }
+  const pattern = escapeRe(word.slice(0, -1)) + typingEnd(word.at(-1));
+  const loose = new RegExp(pattern);
+  const key = new RegExp(`^${pattern}$`);
+  const more = Object.keys(MORE_WORDS).filter((k) => key.test(k)).flatMap((k) => MORE_WORDS[k]);
+  return (n) => loose.test(n) || more.some((w) => n.includes(w));
+}
+
+// 검색어로 이름을 고르는 함수를 만든다. 띄어쓰기를 빼고 붙인 말로 찾고("고향 만두" → 고향만두),
+// 띄어 쓴 낱말이 이름에 모두 들어 있어도 찾는다("돼지 삼겹살" → 돼지고기 삼겹살. 2026-11-11 결정).
+// typing이면 맨 끝 낱말을 치는 도중으로 본다.
+function matcher(query, typing = false) {
+  const parts = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const whole = wordMatcher(parts.join(""), typing);
+  const each = parts.map((word, i) => wordMatcher(word, typing && i === parts.length - 1));
   return (name) => {
     const n = norm(name);
-    return words.some((w) => n.includes(w));
+    return whole(n) || (each.length > 1 && each.every((m) => m(n)));
   };
 }
 
@@ -434,14 +480,18 @@ function renderSearch() {
   const view = $("view");
   view.replaceChildren();
   const q = state.query;
-  const match = matcher(q);
   // KAMIS 품종 뒤에 이마트 상품(전체 품목과 같은 순서). 품종은 품목 이름과 품종 이름을 이어 붙여 찾는다.
   // 화면에 보이는 대로 "한우 등심", "사과 후지"라고 쳐도 나오게 하려는 것이다.
-  const found = [...browseOrder().filter((e) => match(e.item + e.kind)),
-                 ...state.emartItems.filter((e) => match(e.name))];
   // 품종 목록에는 있지만 지금 값이 없는 품목(철이 지난 감귤·딸기 등)은 한 줄로 알린다.
   // 이름을 잘못 친 것이 아니라 값이 없는 것임을 알게 하려는 것이다. 옛 가격 파일에는 이 목록이 없다.
-  const gone = (state.data.no_price ?? []).filter(match);
+  const search = (match) => ({
+    found: [...browseOrder().filter((e) => match(e.item + e.kind)),
+            ...state.emartItems.filter((e) => match(e.name))],
+    gone: (state.data.no_price ?? []).filter(match),
+  });
+  let { found, gone } = search(matcher(q));
+  // 정확히 맞는 것이 하나도 없으면 치는 도중으로 보고 마지막 글자를 느슨하게 맞춰 다시 찾는다("신람" → 신라면).
+  if (!found.length && !gone.length) ({ found, gone } = search(matcher(q, true)));
   const goneLine = gone.length
     ? h("p", { class: "found" }, `${gone.join(", ")}${eun(gone.at(-1))} 요즘 조사 값이 없어요`) : null;
   if (!found.length) {
