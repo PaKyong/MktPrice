@@ -1,5 +1,6 @@
 """KAMIS 받기(실제·샘플) 시험."""
 
+import http.client
 import io
 from contextlib import contextmanager
 from datetime import date
@@ -62,6 +63,14 @@ def test_kamis_gives_up_after_four_tries_without_leaking_key() -> None:
     assert "SECRETKEY" not in str(err.value)
     assert "OSError" in str(err.value)
     assert err.value.__cause__ is None and err.value.__suppress_context__
+
+
+def test_kamis_retries_when_answer_is_cut_off_midway() -> None:
+    # 받는 도중 연결이 끊기면 OSError가 아니라 http.client의 오류가 난다.
+    opener = FakeOpener([http.client.IncompleteRead(b'{"data"'), b'{"data": ["001"]}'])
+    src = KamisSource("SECRETKEY", "me", opener=opener, sleep=no_sleep)
+    assert src.category("400", DAY) == {"data": ["001"]}
+    assert len(opener.urls) == 2
 
 
 def test_kamis_stops_when_three_requests_in_a_row_get_no_answer() -> None:

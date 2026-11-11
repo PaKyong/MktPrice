@@ -1,5 +1,6 @@
 """참가격 받기 시험."""
 
+import http.client
 import io
 import json
 import urllib.request
@@ -125,6 +126,12 @@ def test_retries_then_gives_up_without_leaking_key() -> None:
     assert "SECRETKEY" not in str(err.value)
     assert err.value.__cause__ is None
     assert waits == [2, 4, 8]
+
+
+def test_retries_when_answer_is_cut_off_midway() -> None:
+    opener = FakeOpener([http.client.IncompleteRead(b'{"paths"'), json.dumps(DOC).encode("utf-8")])
+    assert ChampriceSource("k", opener=opener, sleep=no_sleep).months()
+    assert len(opener.urls) == 2
 
 
 def test_retries_then_succeeds() -> None:

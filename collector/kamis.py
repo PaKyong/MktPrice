@@ -7,6 +7,7 @@
 """
 
 import calendar
+import http.client
 import json
 import time
 import urllib.parse
@@ -97,7 +98,8 @@ class KamisSource:
                     data = json.loads(response.read().decode("utf-8"))
                 self._fails_in_a_row = 0
                 return data
-            except (OSError, ValueError) as err:
+            except (OSError, ValueError, http.client.HTTPException) as err:
+                # 받는 도중 연결이 끊기면(IncompleteRead) OSError가 아니라 http.client의 오류가 난다.
                 # 원래 예외의 글은 주소(키)를 담을 수 있어 종류 이름만 남긴다.
                 reason = type(err).__name__
                 if attempt < len(RETRY_WAITS):

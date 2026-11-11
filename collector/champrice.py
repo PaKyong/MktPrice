@@ -6,6 +6,7 @@ API 설명서(키 없이 읽힌다)에서 달 목록을 읽고, 한 달 치 줄(
 키는 주소 대신 머리말(Authorization)에 싣는다. 주소는 오류나 기록에 남기 쉬워서다.
 """
 
+import http.client
 import json
 import re
 import time
@@ -122,7 +123,8 @@ class ChampriceSource:
                 req = urllib.request.Request(url, headers=headers)
                 with self._opener(req, timeout=TIMEOUT_SECONDS) as response:
                     return json.loads(response.read().decode("utf-8"))
-            except (OSError, ValueError) as err:
+            except (OSError, ValueError, http.client.HTTPException) as err:
+                # 받는 도중 연결이 끊기면(IncompleteRead) OSError가 아니라 http.client의 오류가 난다.
                 # 원래 예외의 글은 키를 담을 수 있어 종류 이름만 남긴다.
                 reason = type(err).__name__
                 if attempt < len(RETRY_WAITS):
