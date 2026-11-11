@@ -73,3 +73,24 @@ def test_failed_deploy_is_tried_once_more():
     # 두 시도가 같은 사이트 묶음을 배포한다.
     names = [re.search(r"artifact_name: (.+)", step).group(1) for step in tries]
     assert names[0] == names[1]
+
+
+def test_every_job_starts_from_the_newest_commit():
+    """수집과 배포 모두 main의 가장 새 커밋을 받아 온다.
+
+    받아 오기는 그냥 두면 실행을 만든 때의 커밋을 받는다. 앞 실행이 끝나기를 기다린 수집 실행이 그 실행의
+    커밋을 못 본 채 같은 날 값을 또 받고, 한 줄짜리 가격 파일에서 커밋 충돌이 나 실패한다.
+    """
+    workflow = (ROOT / ".github" / "workflows" / "collect.yml").read_text(encoding="utf-8")
+    checkouts = [step for step in re.split(r"^      - ", workflow, flags=re.M) if step.startswith("uses: actions/checkout@")]
+    assert len(checkouts) == 2
+    assert all("ref: main" in step for step in checkouts)
+
+
+def test_keys_are_given_only_to_steps_that_run_our_code():
+    """키는 작업 전체가 아니라 우리 코드를 돌리는 단계에만 넘긴다(남이 만든 도구 단계에는 보이지 않게)."""
+    workflow = (ROOT / ".github" / "workflows" / "collect.yml").read_text(encoding="utf-8")
+    steps = re.split(r"^      - ", workflow, flags=re.M)
+    assert "secrets." not in steps[0]
+    assert sum("secrets." in step for step in steps) >= 1
+    assert all("uses:" not in step for step in steps[1:] if "secrets." in step)
