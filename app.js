@@ -81,7 +81,7 @@ function h(tag, attrs = {}, ...children) {
   return el;
 }
 
-// 가격: Geist 숫자에 한 단계 작은 "원"을 붙인다(<b class="num">1,234<small>원</small></b>).
+// 가격: 숫자에 한 단계 작은 "원"을 붙인다(<b class="num">1,234<small>원</small></b>).
 const wonNode = (n, cls) => h("b", { class: cls ? `num ${cls}` : "num" }, n.toLocaleString("ko-KR"), h("small", {}, "원"));
 // 줄 아래의 작은 표시("이마트", "이마트 2곳", "11월 2일 값").
 const mini = (text) => h("span", { class: "mini" }, text);
@@ -633,7 +633,7 @@ function render() {
   $("search-clear").hidden = !state.query;
   // 검색 중에는 제목과 안내 쪽지를 숨기고 띠만 남긴다(CSS).
   document.body.classList.toggle("searching", Boolean(state.query) && !match);
-  // 상세에서는 띠를 가격표 받침 위에 띄운다(CSS).
+  // 상세에는 아래 검색창이 없어 띠를 화면 아래에 띄운다(CSS).
   document.body.classList.toggle("detail", Boolean(match));
   if (match) renderDetail(decodeId(match[1]));
   else if (state.query) renderSearch();
@@ -726,7 +726,7 @@ function setupInstallHint() {
   });
 }
 
-// 자판이 가린 높이를 --kb에 넣는다. 아래 검색창, 가격표 받침, 띠가 그만큼 올라가 자판 바로 위에 붙는다.
+// 자판이 가린 높이를 --kb에 넣는다. 아래 검색창과 띠가 그만큼 올라가 자판 바로 위에 붙는다.
 // 아이폰은 자판이 올라와도 창 높이(innerHeight)가 그대로라, 지금 보이는 영역(visualViewport)과의 차이가 자판 높이다.
 // 안드로이드는 viewport 메타의 interactive-widget=resizes-content로 창이 자판만큼 줄어 이 값이 0에 가깝다.
 function setupKeyboardInset() {
