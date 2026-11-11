@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 샘플 응답 만들기: `uv run python -m collector.make_sample` — `collector/sample/`(14MB, git에 넣지 않음)에 만든다. 키 없이 수집하기 전에 한 번 돌린다.
 - 수집: `uv run python -m collector` — 키(환경변수 `KAMIS_CERT_KEY`, `KAMIS_CERT_ID`)가 있으면 KAMIS, 없으면 샘플로 `data/prices.json`을 만든다. 기준일과 출처가 기존 파일과 같으면 건너뛴다. 실제 데이터가 든 파일은 샘플로 덮어쓰지 않는다.
 - 이마트 값(참가격) 받기: `uv run python -m collector.emart` — 키(환경변수 `DATA_GO_KR_KEY`)가 없으면 건너뛴다. 새 달이 있을 때만 최근 3개 달을 받아 `data/emart.json`을 쓴다.
-- 이마트 묶음: `collector/emart_groups.json`(묶음 이름 → 상품명 목록, 적은 순서가 칸 순서)을 손으로 고친다. 목록에 없는 새 상품은 화면의 "이마트 기타" 칸에 모이고 Actions 기록에 "묶음 없는 상품"으로 남는다. 고치고 푸시하면 다음 예약 실행이나 "Run workflow"에서 반영된다(참가격을 다시 받지 않고 묶음만 다시 붙인다).
+- 이마트 묶음: `collector/emart_groups.json`(묶음 이름 → 상품명 목록, 적은 순서가 칸 순서)을 손으로 고친다. 목록에 없는 새 상품은 화면의 "이마트 기타" 칸에 모이고 Actions 기록에 "묶음 없는 상품"으로 남는다. 고치고 푸시하면 다음 예약 실행이나 "Run workflow"에서 반영된다(참가격을 다시 받지 않고 묶음과 평소 값·행사 값만 다시 낸다).
 - 화면 글꼴 다시 만들기: `uv run python tools/make_font.py` — Pretendard에서 자주 쓰는 한글과 이름·화면 글자만 남긴 `fonts/mkt-sans.woff2`를 만든다. 품목·상품 이름에 새 글자가 생겨 `uv run pytest`의 글꼴 시험이 실패하면 다시 돌린다. 원본은 `tools/fonts-src/`(git 밖)에 두고, 받는 곳은 도구 맨 위 설명에 있다.
 - 시험: `uv run pytest` (인터넷 없이 돈다). 하나만: `uv run pytest collector/tests/test_compute.py::test_signal_boundaries`
 - 품종 목록 다시 만들기: `uv run python -m collector.make_items` — 키를 받은 뒤 실제 품종과 조사 단위로 `collector/items.json`을 바꿀 때 쓴다.
@@ -24,6 +24,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 평일 한국 19시 17분(UTC 10시 17분) 예약과 Actions 탭의 "Run workflow"(지금 실행)로 돈다. Secrets에 `KAMIS_CERT_KEY`, `KAMIS_CERT_ID`가 없으면 "키 없음"을 남기고 수집을 건너뛴 뒤 배포만 한다. 키가 있으면 수집하고 `data/prices.json`이 바뀌었을 때만 `github-actions[bot]`이 `chore(data): <기준일> 가격 갱신`으로 커밋·푸시한다.
 - 참가격(이마트 값)은 KAMIS 커밋 다음에 돈다. Secrets에 `DATA_GO_KR_KEY`가 없으면 "참가격 키 없음"을 남기고 건너뛴다. `data/emart.json`이 바뀌었을 때만(한 달에 한 번) `chore(data): 이마트 <조사일> 값 갱신`으로 커밋한다. 받다가 실패하면 기존 파일을 두고 배포까지 한 뒤, 맨 끝 `emart-check` 작업이 실행을 실패로 끝낸다(메일이 온다).
 - 배포도 같은 워크플로가 한다(Actions 기본 토큰으로 푸시한 커밋은 다른 워크플로를 깨우지 않아서). 사람이 `main`에 푸시하면 수집 없이 배포만 돈다. 배포에는 화면 파일과 `data/`만 들어간다. 배포 단계가 실패하면 같은 실행 안에서 한 번 더 한다. 저장소 설정에서 Pages 출처가 "GitHub Actions"여야 한다.
+- KAMIS가 요청 3번에 연달아 응답하지 않으면 수집이 실패로 끝난다(메일이 온다). 기존 파일은 그대로이고 다음 실행에서 다시 받는다. 수집 기록에 "품종 목록에 없는 품종 N개: …"가 보이면 KAMIS가 새 품종을 조사하기 시작한 것이니 아래 "품종 목록도 다시 만들기"로 돌린다.
 - 품종 목록 다시 만들기: Actions의 "Run workflow" 창에서 "품종 목록도 다시 만들기"를 켜고 돌리면, Secrets의 키로 `collector.make_items`를 돌린 뒤 `--force`로 수집해 `collector/items.json`과 `data/prices.json`을 함께 커밋한다(`…, 품종 목록 다시 만듦`).
 - Actions가 평일마다 `data/prices.json`을 커밋하므로, 푸시 전에 먼저 받아온다(`git pull --rebase`). `data/prices.json`과 `data/emart.json`은 손으로 고치지 않는다.
 
